@@ -1,7 +1,7 @@
 # ASUS Z97-A — Coreboot + EDK2 UEFI + iPXE Port
 
-![Release](https://img.shields.io/badge/Release-v26.11.1-2ea44f?style=flat-square)
-![Coreboot](https://img.shields.io/badge/Coreboot-df45ea2c49b4-0066cc?style=flat-square)
+![Release](https://img.shields.io/badge/Release-v26.09-2ea44f?style=flat-square)
+![Coreboot](https://img.shields.io/badge/Coreboot-26.09%20%7C%20df45ea2c49b4-0066cc?style=flat-square)
 ![Payload](https://img.shields.io/badge/Payload-EDK2%20UefiPayloadPkg%20%2B%20iPXE-5c2d91?style=flat-square)
 ![Flash](https://img.shields.io/badge/SPI%20Flash-W25Q64FV%20(8M)-d97706?style=flat-square)
 ![Hardware](https://img.shields.io/badge/Hardware-Verified%20on%20ASUS%20Z97--A-success?style=flat-square)
@@ -32,7 +32,22 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
   - Integrated **`iPXE Network Boot`** (`HTTPS` + `IMAGE_TRUST_CMD`) inside EDK2 supporting both onboard **`I218-V`** (`eno0`) and add-in **`I226-V` `2.5GbE`** (`enp5s0`, zero NIC error/CRC counters).
   - **True 64-bit Above-4G MMIO (`PM64` `QWordMemory`)**, **Resizable BAR up to 32 GiB**, **SR-IOV**, and **VT-d (`DMAR`, 15 IOMMU groups, `/dev/kvm`)**.
   - **Proxmox VE 9 (`Linux 7.0.14-17-pve`) Sensors & Hardware Controls**: `nct6775` (`NCT6791D @ 0x0290` unlocked via `CR 0x28=0x00`), `coretemp`, `intel-rapl`, `Q-LEDs` (`DRAM -> VGA -> BOOT_DEVICE`), SmartFan IV Q-Fan curves, `ErP S4/S5`, read-only `ENE EC MBE0-Z97-0121`, opt-in `DIGI+ ASP1252` CFR menu, `TPU` (`MSR 0x1ad`), and `EPU` (`-20 mV` OC Mailbox).
-  - **Haswell `microcode 0x28`** (newer than stock `0x24`) and **unlocked SPI (`FLMSTR1=0xffff0000`, `BIOS_CNTL=0x09`)** allowing future `COREBOOT`-only internal `flashrom` or pre-OS UEFI delta updates without removing the socketed SPI chip.
+  - **Haswell `microcode 0x28`** (latest Intel `3rdparty/intel-microcode`, newer than stock `0x24`) and **unlocked SPI (`FLMSTR1=0xffff0000`, `BIOS_CNTL=0x09`)** allowing future `COREBOOT`-only internal `flashrom` or pre-OS UEFI delta updates without removing the socketed SPI chip.
+
+---
+
+## Firmware & Blob Versions
+
+| Component / Blob | Version / Revision | Status |
+|---|---|---|
+| **Coreboot / CI Cadence** | Live `v0.15` (`df45ea2c49b4`) / CI `26.09` (`YY.03/06/09/12`) | **Latest** |
+| **EDK2 `UefiPayloadPkg`** | MrChromebox `f248a68be3` (`2026-11-14`) | **Latest** |
+| **iPXE** | `21f9cda4d` (`master`, pulled fresh in every CI run) | **Latest** |
+| **CPU Microcode (`0x306c3` / `0x40661` / `0x40671`)** | `rev 0x28` / `0x1c` / `0x22` (`intel-microcode` `bdc92ab`) | **Latest / Final** |
+| **Intel ME (`FREG2`, `with-me` / `without-me`)** | `9.1.25.1005` (`FTPR` RSA VALID; `without-me` neutralized) | Final ASUS `3503` *(Intel final 9.1.x is `9.1.45.3000`)* |
+| **IFD / GbE `I218-V` / VBT / ENE EC** | `3503` (`FLMSTR1=0xffff0000`, `I218-V 0.1-4`, `VBT 100`, `MBE0-Z97-0121`) | **Final** ASUS Z97-A `3503` |
+
+*(See [`BLOBS.md`](BLOBS.md) for full SHA-256 checksums, `libgfxinit`/`libhwbase`/`vboot` commits, and NIC/SSD firmware details.)*
 
 ---
 

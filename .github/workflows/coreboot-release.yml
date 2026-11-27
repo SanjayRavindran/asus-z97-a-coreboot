@@ -29,6 +29,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,7 +44,7 @@ jobs:
       coreboot_ref: ${{ steps.meta.outputs.coreboot_ref }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Ensure build prerequisites (liblzma-dev for iPXE)
         run: |
@@ -91,7 +95,7 @@ jobs:
           bash scripts/build_release_roms.sh
 
       - name: Upload 2 release binaries artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: asus-z97-a-release-bins
           path: release-bins/*.bin
@@ -102,10 +106,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download 2 release binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: asus-z97-a-release-bins
           path: release-bins
