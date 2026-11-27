@@ -1,6 +1,6 @@
 # ASUS Z97-A — Coreboot + EDK2 UEFI + iPXE Port
 
-![Release](https://img.shields.io/badge/Release-v26.09-2ea44f?style=flat-square)
+![Release](https://img.shields.io/badge/Release-v26.09--r2-2ea44f?style=flat-square)
 ![Coreboot](https://img.shields.io/badge/Coreboot-26.09%20%7C%20df45ea2c49b4-0066cc?style=flat-square)
 ![Payload](https://img.shields.io/badge/Payload-EDK2%20UefiPayloadPkg%20%2B%20iPXE-5c2d91?style=flat-square)
 ![Flash](https://img.shields.io/badge/SPI%20Flash-W25Q64FV%20(8M)-d97706?style=flat-square)
@@ -9,8 +9,9 @@
 
 **Quick Navigation:**
 [**Releases**](../../releases) ·
-[**HW & SW Flowcharts**](docs/COREBOOT-HW-SW-FLOW.md) ·
-[**Parity & Live Report (`v0.15`)**](docs/COREBOOT-VS-STOCK-PARITY-REPORT.md) ·
+[**Hardware-to-Software Map (5 Flowcharts)**](docs/HARDWARE-TO-SOFTWARE-MAP.md) ·
+[**Boot & Flex-I/O Flowcharts**](docs/COREBOOT-HW-SW-FLOW.md) ·
+[**Parity & Live Report (`v0.16`)**](docs/COREBOOT-VS-STOCK-PARITY-REPORT.md) ·
 [**Hardware, PCIe & Flex-I/O Map**](docs/Z97-A-HARDWARE-AND-PCIE.md) ·
 [**Stock ROM (`3503`) Audit**](docs/STOCK-ROM-FEATURES-AUDIT.md) ·
 [**DIGI+ VRM, TPU & EPU**](docs/DIGI-VRM-TPU-EPU-ALGORITHMS.md) ·
@@ -108,12 +109,27 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
 
 ---
 
+## Architecture & Hardware-to-Software Flow
+
+```mermaid
+flowchart LR
+    HW_CPU["i7-4790K + DDR3-1866 + PEG"] --> CB_NB["Native Raminit + Above-4G PM64 + VT-d + VMX"] --> OS_VIRT["KVM + 14 IOMMU Groups + ReBar/SR-IOV"]
+    HW_GFX["HD 4600 iGPU + ASM1442K Ports"] --> CB_GFX["data.vbt + gma-mainboard.ads + libgfxinit + EDK2 GOP"] --> OS_GFX["Linux i915 + 00:03.0 Audio (AOC 28E850)"]
+    HW_PCH["Z97 PCH + Flex-I/O + I218-V + I226-V"] --> CB_PCH["76 GPIOs + ASPM=n + wol.asl + FD2 Hide MEI #1"] --> OS_IO["6.0G SATA + 2.5GbE + WoL S3/S4/S5"]
+    HW_SIO["NCT6791D + ENE EC + ASP1252 + W25Q64FV"] --> CB_SIO["COM1 + Q-Fan + EPU/TPU + CFR ESC + SMMSTORE"] --> OS_HW["nct6775 + Power-ON 0x3808 + flashrom"]
+```
+
+*(See [**`docs/HARDWARE-TO-SOFTWARE-MAP.md`**](docs/HARDWARE-TO-SOFTWARE-MAP.md) for all **5 detailed flowcharts** — Full HW->SW Map, `with-me` vs `without-me` `minimal-116k` SPI Layout, WoL/Power-ON Signal Chain, `data.vbt` Display Path, Virtualization/ReBar/SR-IOV Pipeline — and the complete register-to-driver mapping table.)*
+
+---
+
 ## Documentation & Skills Index
 
 | File | Contents |
 |---|---|
-| [**`docs/COREBOOT-HW-SW-FLOW.md`**](docs/COREBOOT-HW-SW-FLOW.md) | 3 Mermaid architecture flowcharts (Software Boot Flow, Z97-A Hardware & Flex-I/O `HSIO 1..18` Interconnect, OS Sensor/EPU/TPU Flow) + verified `v0.15` metrics |
-| [**`docs/COREBOOT-VS-STOCK-PARITY-REPORT.md`**](docs/COREBOOT-VS-STOCK-PARITY-REPORT.md) | Complete SPI, silicon, PCIe, SATA, audio, display, and `192.168.1.150` live hardware parity report |
+| [**`docs/HARDWARE-TO-SOFTWARE-MAP.md`**](docs/HARDWARE-TO-SOFTWARE-MAP.md) | **5 Mermaid flowcharts** + Master Hardware-to-Software Mapping Table (`v0.16` / `v26.09-r2`: physical buses/ICs -> Coreboot patches -> ACPI/EDK2 -> Linux drivers) |
+| [**`docs/COREBOOT-HW-SW-FLOW.md`**](docs/COREBOOT-HW-SW-FLOW.md) | Software boot flow, Flex-I/O `HSIO 1..18` interconnect, OS sensor/EPU/TPU/WoL flowcharts + verified `v0.16` metrics |
+| [**`docs/COREBOOT-VS-STOCK-PARITY-REPORT.md`**](docs/COREBOOT-VS-STOCK-PARITY-REPORT.md) | Complete SPI, silicon, PCIe, SATA, audio, display, WoL, Above-4G, ME, and `192.168.1.150` live hardware parity report |
 | [**`docs/Z97-A-HARDWARE-AND-PCIE.md`**](docs/Z97-A-HARDWARE-AND-PCIE.md) | Onboard IC inventory, Flex-I/O `M.2`/`PCIEX1_1`/`PCIEX1_2`/`SATA Express` muxing, Haswell `CFG[6:5]` PEG bifurcation, Above-4G / ReBar / SR-IOV / IOMMU |
 | [**`docs/STOCK-ROM-FEATURES-AUDIT.md`**](docs/STOCK-ROM-FEATURES-AUDIT.md) | Reverse-engineered `ENE EC` (`MBE0-Z97-0121`), `PcieLaneDXE`, `Q-LEDs`, `EPU`/`TPU`/`DirectKey`, `Q-Fan` banks, `ErP S4/S5`, and `DIGI+ ASP1252` |
 | [**`docs/DIGI-VRM-TPU-EPU-ALGORITHMS.md`**](docs/DIGI-VRM-TPU-EPU-ALGORITHMS.md) | Decoded `ASP1252` EC Page 0/1/2 register map, telemetry decoding, `EPU` `-20 mV`, `TPU` 3-way switch, and LPC Port `80h` |

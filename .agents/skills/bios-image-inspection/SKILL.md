@@ -31,7 +31,9 @@ Follow strict read-only provenance and verification gates before treating any ve
 | Stripped `Z97-A-ASUS-3503` (`dd bs=2048 skip=1`) | `8,388,608` | `cb626728fd13a8ef5ff8f843f21388594287b3e11398bfd04039302bfb504a0c` | Stock IFD (`2fe73369...`), valid ME `9.1.25.1005` (`0daade80...`, `FTPR` RSA VALID), placeholder GbE MAC `88:88:88:88:87:88` (`88ae0236...`), stock BIOS (`83f5567f...`). |
 | `Z97-A-ASUS-2801/Z97-A-ASUS-2801.CAP` | `8,390,656` | `7445ad6c5eefab0daa2168837d5fad2431de0db015dee06e707d9ae4e31a2d55` | Official ASUS 2801 capsule (stripped SHA-256 `dd254369a8a6ee4be85b8e51c4eba1e7f45e56669cc106ea00d13e55d940195c`, same IFD/ME `9.1.25.1005`). |
 | `mod_Z97A_ReBar.ROM` | `8,388,608` | `df80ced1187cdbafdec6db6dfcc80d77cd9c4ea9801a3600e75a5e9687d88e03` | Unlocked IFD (`FLMSTR1=0xffff0000`, `f5caa07b...`), valid ME `9.1.40.1000` (`92e378ff...`, `FTPR` RSA VALID), placeholder GbE MAC `88:88:88:88:87:88`. |
-| `stock-capture/i915_vbt.bin` | `6,144` | `ada53b3d9638c206a63fbe63f6ef48b74b86da90018e34cd30f9c544b4574f36` | Captured live from `/sys/kernel/debug/dri/*/i915_vbt` (Intel HD 4600 `8086:0412`). |
+| `stock-capture/i915_vbt.bin` (`blobs/data.vbt`) | `6,144` | `ada53b3d9638c206a63fbe63f6ef48b74b86da90018e34cd30f9c544b4574f36` | Captured live from `/sys/kernel/debug/dri/*/i915_vbt` (Intel HD 4600 `8086:0412`). BDB `189`: `CRT_GMBUS=2` (VGA `PCH_DAC`), `DDI-B` DVI-D/HDMI, `DDI-C` DP+HDMI (`AUX 0x20`), `DDI-D` HDMI, `SSC=0`. |
+| `blobs/ifd-z97-a-minimal-116k-unlocked.bin` | `4,096` | `e26b6c9b0f724e992cbe81aba32c51313f1b642f8f5ac7455f93d30f9ef859f8` | `without-me` minimal-ME IFD (`FLREG2=0x001f0003`, `FLREG1=0x07ff0020`, `AltMeDisable=1`, keeps identical `COREBOOT@0x211000` FMAP alignment). |
+| `blobs/me-z97-a-minimal-116k.bin` | `118,784` | `1df709207251346c7221a72128a5b1e15cedacbd4edf7dcbcd24b73b315bdb43` | `me_cleaner.py -S -r -t` truncated `116 KiB` ME (`ROMP+BUP` only, `FTPR` RSA VALID — avoids 30-min PCH timer). |
 
 ## Evidence-Gated Coreboot Porting (Gates A–E)
 

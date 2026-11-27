@@ -37,4 +37,13 @@ Operational reference derived from reverse-engineering the stock AMI `3503` ROM 
 - **Q-LED Progression**: `DRAM_LED` (`NCT6791D LDN 0x08 GP07`) pre-RAM -> `VGA_LED` (PCH `GPIO38`) -> `BOOT_DEVICE_LED` (PCH `GPIO22`) -> all OFF at `BS_PAYLOAD_BOOT` (toggle via `qled_post_indicators`).
 - **Q-Fan (`NCT6791D` HWM `@0x290`)**: `CR 0x28=0x00` unlocks I/O; Bank 7 `TjMax` calibrated; SmartFan IV curves on Bank 2 (`CPU_FAN`, PECI) and Banks `1/3/8/9` (`CHA_FAN1..4`, SYSTIN).
 - **LPC Port `80h` + `CMOS_POST`**: `RCBA32(GCS)` (`0x3410`) bit 2 cleared (`RPR=0`) routes `0x80` to the `TPM` LPC header; `CONFIG_CMOS_POST=y` (`0x70`) preserves last boot POST codes. Leave `NCT6791D LDN 0x14` off.
-- **iPXE UEFI Netboot**: Built natively into EDK2 (`NETWORK_IPXE=TRUE`, `B68653C7-EEA1-4435-A199-A44F59E4476C`) with HTTPS, TRUST, and `COM1` serial support (`I218-V` `8086:15a1` + `I226-V` `8086:125c`).
+- **iPXE UEFI Netboot & UEFI Shell**: Built natively into EDK2 (`NETWORK_IPXE=TRUE`, `B68653C7-EEA1-4435-A199-A44F59E4476C`) with HTTPS, TRUST, `COM1` support (`I218-V` `8086:15a1` + `I226-V` `8086:125c`), and interactive `UEFI Shell` (supersedes legacy `coreinfo`).
+
+## 4. Power Management, ME & UEFI CFR Defaults (`v0.16` / `v26.09-r2`)
+
+All runtime board toggles persist in `SMMSTORE` (`0x190000..0x20ffff`, edited via `ESC -> Device Manager -> Coreboot Configuration`, superseding legacy `nvramcui`):
+
+- **`me_disable` (System & PCIe)**: Defaults to `1` (`Disabled` via `CONFIG(DISABLE_ME_PCI)` in `lynxpoint/cfr.h`); `lynxpoint/me.c` hides `00:16.0` (`MEI #1`) via `FD2` even when `AltMeDisable=1` (`without-me` `minimal-116k`).
+- **`power_on_after_fail` (Power Management)**: Defaults to `1` (`Power on (S0)` via `CONFIG_POWER_STATE_ON_AFTER_FAILURE=y`), clearing `GEN_PMCON_3[0]` (`AFTERG3_EN=0`).
+- **`wol_enable` (Power Management)**: Defaults to `1` (`Enabled`), setting `GEN_PMCON_3[13]` (`WOL_EN_OVRD=1` -> `0x3808`) unless `erp_ready=1`, preserving `PME_B0`/`PME`/`PCI_EXP` GPEs & clearing `PCIEXPWAK_DIS` on S5 in `lynxpoint/smihandler.c`, paired with `board/src/mainboard/asus/z97-a/acpi/wol.asl` (`GLAN` `0x0d`, `PEGP`/`PEG1`/`PEG2`, `RP01..08` `0x09`).
+- **`erp_ready` (Power Management)**: Defaults to `0` (`Disabled` — required for WoL & standby USB).

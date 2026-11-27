@@ -53,11 +53,14 @@ python ".agents/skills/serial-communication/scripts/z97a_serial.py" loopback-tes
     - `serflash`: polls `0x3f8` UART LSR directly (no FIFO drops at `115200` baud) for binary-framed `Z9INFO`, `Z9CRCS`, `Z9WR4K`, `Z9VSHA`, `Z9DIAG`, and `Z9REBT` commands driven by [`scripts/z97a_serial_flash.py`](../../../scripts/z97a_serial_flash.py).
   - **~5-Minute UEFI/iPXE Idle Watchdog Pitfall**: Do NOT park the Z97-A idle at `iPXE>` for > 5 minutes between turns — after ~5–6 minutes idle it stops responding on UART and drops HDMI output. Chain RAM diagnostic subcommands automatically inside the catcher script (or immediately after parking) rather than leaving the prompt idle.
   - iPXE HTTP flashing: from EDK2 `iPXE>` over paced COM1, run `ifopen net1 && dhcp net1 && chain http://192.168.1.90:8080/z97a_flash_<tag>.efi` to delta-flash the firmware (`0x210000..0x7fffff` `FMAP + COREBOOT` to preserve `RW_MRC_CACHE` & `SMMSTORE`), verify full SHA-256, and cold-reset automatically.
+- **Serial Echo Loop Prevention (`/dev/ttyUSB0`)**: Before starting a raw capture on `192.168.1.90`, configure raw `-echo -ixon -ixoff -crtscts` and flush buffers (`termios.tcflush(fd, TCIOFLUSH)`) — leaving kernel line echo enabled on `/dev/ttyUSB0` can bounce OS login banners back into `ttyS0` and flood capture files.
 - Ensure no leftover background `cat`, `catch_*`, or test loop is holding `/dev/ttyUSB0` on `192.168.1.90` or `/dev/ttyS0` on `192.168.1.150` before starting a capture.
 - Never restart `serial-getty@ttyS0` from inside an active `ttyS0` serial shell (use `systemctl daemon-reload` and `systemctl enable` for boot-time changes).
 - In PowerShell 5.1, avoid `&&`, and avoid unescaped double quotes inside single-quoted SSH commands; pipe scripts via `@' ... '@ | ssh host "tr -d '\r' | bash -s"`.
 
-## USB HDMI Video Capture (`192.168.1.90:/dev/video0`)
+## USB HDMI Video Capture (`192.168.1.90:/dev/video0`) — Currently Unplugged
+
+- **Current Cabling**: The `Z97-A` HDMI output (`card1-HDMI-A-3`) is connected directly to a physical **`AOC 28E850`** monitor (the `MS2109` capture dongle is unplugged from `192.168.1.90:/dev/video0`). **Do NOT probe `/dev/video0` unless the user explicitly reconnects the capture card.**
 
 - **Hardware**: MacroSilicon `MS2109` (`534d:2109`, `uvcvideo` at `/dev/video0`), supporting `MJPG` and `YUYV` up to `1920x1080`.
 - **Important**: The Z97-A `HDMI` port is wired directly into this capture card on `192.168.1.90` (the user cannot see a physical monitor while the capture card is attached). Always grab and visually inspect frames with `read_file` to diagnose HDMI output across Coreboot `libgfxinit`, EDK2 GOP, and Linux `i915`.
