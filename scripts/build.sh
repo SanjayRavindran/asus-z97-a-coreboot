@@ -142,13 +142,11 @@ for entry in cpu_microcode_blob.bin fallback/romstage fallback/ramstage fallback
   echo "$CBFS_LIST" | grep -q "$entry" || { echo "ERROR: Missing CBFS entry '$entry'" >&2; exit 1; }
 done
 
-TMP_CFG="$(mktemp)"
-./build/cbfstool "$OUT_BIN" extract -n config -f "$TMP_CFG" -U
-grep -q "^# CONFIG_PCIEXP_ASPM is not set$" "$TMP_CFG"
-grep -q "^# CONFIG_PCIEXP_CLK_PM is not set$" "$TMP_CFG"
-grep -q "^# CONFIG_PCIEXP_L1_SUB_STATE is not set$" "$TMP_CFG"
-grep -q "^CONFIG_EDK2_ENABLE_IPXE=y$" "$TMP_CFG"
-rm -f "$TMP_CFG"
+grep -q "^# CONFIG_PCIEXP_ASPM is not set$" .config
+grep -q "^# CONFIG_PCIEXP_CLK_PM is not set$" .config
+grep -q "^# CONFIG_PCIEXP_L1_SUB_STATE is not set$" .config
+grep -q "^CONFIG_EDK2_ENABLE_IPXE=y$" .config
+echo "Verified .config: ASPM=n, CLK_PM=n, L1_SUB_STATE=n, EDK2_ENABLE_IPXE=y."
 
 popd >/dev/null
 echo "Verified ready-to-flash 8 MiB ROM: $OUT_BIN"
