@@ -1,0 +1,26 @@
+build/
+outputs/
+stock-capture/
+datasheets/
+UBU_v1.79.17/
+AMI AFUDOS*/
+Z97-A-ASUS-*/
+*.rom
+*.ROM
+*.bin
+*.vbt
+*.CAP
+*.fz
+*.FZ
+*.pdf
+*.PDF
+*.exe
+*.bak
+*.swp
+__pycache__/
+.DS_Store
+
+# Allow committed motherboard/chipset firmware blobs
+!blobs/
+!blobs/*.bin
+!blobs/*.vbt

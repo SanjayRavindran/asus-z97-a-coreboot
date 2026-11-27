@@ -1,0 +1,381 @@
+diff --git a/src/southbridge/intel/lynxpoint/Kconfig b/src/southbridge/intel/lynxpoint/Kconfig
+index a844d7cd..6d750756 100644
+--- a/src/southbridge/intel/lynxpoint/Kconfig
++++ b/src/southbridge/intel/lynxpoint/Kconfig
+@@ -18,7 +18,7 @@ config SOUTHBRIDGE_INTEL_LYNXPOINT
+ 	select HAVE_SMI_HANDLER
+ 	select HAVE_USBDEBUG_OPTIONS
+ 	select USE_WATCHDOG_ON_BOOT
+-	select PCIEXP_ASPM
++	select PCIEXP_ASPM if !BOARD_ASUS_Z97_A
+ 	select PCIEXP_COMMON_CLOCK
+ 	select INTEL_DESCRIPTOR_MODE_CAPABLE
+ 	select HAVE_EM100PRO_SPI_CONSOLE_SUPPORT
+@@ -72,9 +72,11 @@ config PCIEXP_AER
+ 	default y
+ 
+ config PCIEXP_CLK_PM
++	default n if BOARD_ASUS_Z97_A
+ 	default y
+ 
+ config PCIEXP_L1_SUB_STATE
++	default n if BOARD_ASUS_Z97_A
+ 	default y
+ 
+ config SERIALIO_UART_CONSOLE
+diff --git a/src/southbridge/intel/lynxpoint/early_pch_native.c b/src/southbridge/intel/lynxpoint/early_pch_native.c
+index 04b5055c..110930be 100644
+--- a/src/southbridge/intel/lynxpoint/early_pch_native.c
++++ b/src/southbridge/intel/lynxpoint/early_pch_native.c
+@@ -1,10 +1,12 @@
+ /* SPDX-License-Identifier: GPL-2.0-or-later */
+ 
+ #include <console/console.h>
++#include <delay.h>
+ #include <device/pci_def.h>
+ #include <device/pci_ops.h>
+ #include <southbridge/intel/common/lpc_def.h>
+ #include <southbridge/intel/lynxpoint/hsio/hsio.h>
++#include <southbridge/intel/lynxpoint/iobp.h>
+ #include <southbridge/intel/lynxpoint/pch.h>
+ #include <types.h>
+ 
+@@ -21,6 +23,9 @@ static void early_sata_init(const uint8_t pch_revision)
+ 	const uint8_t lane_owner = pci_read_config8(PCH_PCIE_DEV(0), 0x410);
+ 	printk(BIOS_DEBUG, "HSIO lane owner: 0x%02x\n", lane_owner);
+ 
++	if (is_9_series_pch_h())
++		pci_update_config8(PCH_SATA_DEV, 0x90, 0x3f, 0x60);
++
+ 	/* BWG Step 2 */
+ 	pci_update_config32(PCH_SATA_DEV, SATA_SCLKG, ~0x1ff, 0x183);
+ 
+@@ -38,6 +43,52 @@ static void early_sata_init(const uint8_t pch_revision)
+ 		/** FIXME: Figure out HSIO settings for 9 series PCH-H **/
+ 		if (pch_revision >= LPT_H_STEP_C0 || is_9_series_pch_h()) {
+ 			program_hsio_sata_lpt_h_cx(is_mobile);
++			if (is_9_series_pch_h()) {
++				static const uint32_t z97_secrt8c[] = {
++					0xea00248c, 0xea00268c,
++					0xea00088c, 0xea000a8c,
++				};
++				for (unsigned int i = 0; i < 4; i++)
++					pch_iobp_update(z97_secrt8c[i], ~0x00ff0000U, 0x00690000U);
++				static const uint32_t z97_secrt88[] = {
++					0xea002488, 0xea002688,
++					0xea000888, 0xea000a88,
++					0xea002088, 0xea002288,
++				};
++				for (unsigned int i = 0; i < 6; i++)
++					pch_iobp_update(z97_secrt88[i], ~0x0000ff00U, 0x00008000U);
++				/*
++				 * Stock SBPEI/0xfff8fac2 + PchInitPeim/0xfff9b738 program
++				 * Gen3 RxEq DTLE=2 across all 6 SATA ports in PEI before SATA_PCS.
++				 */
++				static const uint32_t z97_dtle_base[] = {
++					0xea002550, 0xea002750,
++					0xea000950, 0xea000b50,
++					0xea002150, 0xea002350,
++				};
++				for (unsigned int i = 0; i < 6; i++) {
++					if (i >= 4 && (lane_owner & BIT(i)))
++						continue;
++					pch_iobp_update(z97_dtle_base[i],
++							~(0x3fU << SATA_DTLE_DATA_SHIFT),
++							0x02U << SATA_DTLE_DATA_SHIFT);
++					pch_iobp_update(z97_dtle_base[i] + 4,
++							~(0x3fU << SATA_DTLE_EDGE_SHIFT),
++							0x02U << SATA_DTLE_EDGE_SHIFT);
++				}
++				if (CONFIG(BOARD_ASUS_Z97_A)) {
++					printk(BIOS_INFO,
++					       "Z97-A: IOBP P1 2688=%08x 268c=%08x 2690=%08x 2750=%08x 2754=%08x 8008=%08x 8100=%08x 8104=%08x\n",
++					       pch_iobp_read(0xea002688),
++					       pch_iobp_read(0xea00268c),
++					       pch_iobp_read(0xea002690),
++					       pch_iobp_read(0xea002750),
++					       pch_iobp_read(0xea002754),
++					       pch_iobp_read(0xea008008),
++					       pch_iobp_read(0xea008100),
++					       pch_iobp_read(0xea008104));
++				}
++			}
+ 		} else {
+ 			printk(BIOS_ERR, "Unsupported PCH-H stepping 0x%02x\n", pch_revision);
+ 		}
+@@ -178,7 +229,8 @@ void pch_dmi_tc_vc_mapping(const u32 vc0, const u32 vc1, const u32 vcp, const u3
+ 
+ 	printk(BIOS_DEBUG, "Waiting for PCH DMI VC negotiation... ");
+ 	do {} while (RCBA16(V0STS) & VCNEGPND);
+-	do {} while (RCBA16(V1STS) & VCNEGPND);
++	if (vc1 & VC_ACTIVE)
++		do {} while (RCBA16(V1STS) & VCNEGPND);
+ 	do {} while (RCBA16(VPSTS) & VCNEGPND);
+ 	do {} while (RCBA16(VMSTS) & VCNEGPND);
+ 	printk(BIOS_DEBUG, "done!\n");
+diff --git a/src/southbridge/intel/lynxpoint/early_usb_native.c b/src/southbridge/intel/lynxpoint/early_usb_native.c
+index cb6f6ee8..d2fddfcc 100644
+--- a/src/southbridge/intel/lynxpoint/early_usb_native.c
++++ b/src/southbridge/intel/lynxpoint/early_usb_native.c
+@@ -106,7 +106,8 @@ static void common_ehci_hcs_init(void)
+ 	pch_iobp_update(0xe5007f04, 0, 0x00004481);
+ 
+ 	for (unsigned int port = 0; port < physical_port_count(); port++)
+-		pch_iobp_update(0xe500400f + port * 0x100, ~(1 << 0), 0 << 0);
++		pch_iobp_update((CONFIG(BOARD_ASUS_Z97_A) ? 0xe500410f : 0xe500400f) + port * 0x100,
++				~(1 << 0), 0 << 0);
+ 
+ 	pch_iobp_update(0xe5007f14, ~(3 << 19), (3 << 19));
+ 
+@@ -167,8 +168,13 @@ static void common_xhci_hc_init(void)
+ 	else
+ 		write32(xhci_bar + 0x8140, 0xff03c132);
+ 
++	if (CONFIG(BOARD_ASUS_Z97_A))
++		clrsetbits32(xhci_bar + 0x8144, BIT(7) | BIT(6), BIT(8));
++
+ 	if (is_lp)
+ 		clrsetbits32(xhci_bar + 0x8154, BIT(21), BIT(13));
++	else if (CONFIG(BOARD_ASUS_Z97_A))
++		clrsetbits32(xhci_bar + 0x8154, BIT(21) | BIT(13), BIT(31));
+ 	else
+ 		clrsetbits32(xhci_bar + 0x8154, BIT(21) | BIT(13), 0);
+ 
+@@ -560,6 +566,10 @@ static void program_ehci_port_length(void)
+ 		if (!mainboard_usb2_ports[port].enable)
+ 			continue;
+ 		const uint32_t addr = 0xe5004000 + (port + 1) * 0x100;
++		if (CONFIG(BOARD_ASUS_Z97_A)) {
++			pch_iobp_update(addr, ~0x0000ff00U, 0x00009c01U);
++			continue;
++		}
+ 		const uint8_t param_1 = get_ehci_tune_param_1(&mainboard_usb2_ports[port]);
+ 		const uint8_t param_2 = get_ehci_tune_param_2(&mainboard_usb2_ports[port]);
+ 		pch_iobp_update(addr, ~0x7f00, param_2 << 11 | param_1 << 8);
+diff --git a/src/southbridge/intel/lynxpoint/lpc.c b/src/southbridge/intel/lynxpoint/lpc.c
+index 4239da0e..97592cfa 100644
+--- a/src/southbridge/intel/lynxpoint/lpc.c
++++ b/src/southbridge/intel/lynxpoint/lpc.c
+@@ -113,6 +113,18 @@ static void pch_pirq_init(struct device *dev)
+ 	pci_write_config8(dev, PIRQG_ROUT, pirq);
+ 	pci_write_config8(dev, PIRQH_ROUT, pirq);
+ 
++	if (CONFIG(BOARD_ASUS_Z97_A)) {
++		/* Stock Z97-A 3503 SBPEI/DAT_fff9414c & inteltool.txt D31IR..D20IR */
++		RCBA16(D31IR) = 0x0235;
++		RCBA16(D29IR) = 0x2037;
++		RCBA16(D28IR) = 0x3210;
++		RCBA16(D27IR) = 0x3216;
++		RCBA16(D26IR) = 0x3250;
++		RCBA16(D25IR) = 0x7654;
++		RCBA16(D22IR) = 0x3210;
++		RCBA16(D20IR) = 0x3215;
++	}
++
+ 	/* Eric Biederman once said we should let the OS do this.
+ 	 * I am not so sure anymore he was right.
+ 	 */
+@@ -308,7 +320,8 @@ static void configure_dmi_pm(struct device *dev)
+ 
+ 	RCBA32_OR(0x21a4, 3 << 10);
+ 
+-	RCBA16(0x21a8) |= 3 << 0;
++	if (!CONFIG(BOARD_ASUS_Z97_A))
++		RCBA16(0x21a8) |= 3 << 0;
+ 
+ 	/* Set again after enabling DMI ASPM */
+ 	RCBA32_OR(0x2304, 1 << 10);
+@@ -378,7 +391,7 @@ static void lpt_pm_init(struct device *dev)
+ 	/* DMI power optimizer */
+ 	RCBA32_OR(0x33d4, 1 << 27);
+ 	RCBA32_OR(0x33c8, 1 << 27);
+-	RCBA32(0x2b14) = 0x1e0a0317;
++	RCBA32(0x2b14) = CONFIG(BOARD_ASUS_Z97_A) ? 0x1e0a0314 : 0x1e0a0317;
+ 	RCBA32(0x2b24) = 0x4000000b;
+ 	RCBA32(0x2b28) = 0x00000002;
+ 	RCBA32(0x2b2c) = 0x00008813;
+@@ -393,7 +406,7 @@ static void lpt_pm_init(struct device *dev)
+ 		reg32 |= (1 << 24) | (1 << 26);
+ 	RCBA32(0x3a84) = reg32;
+ 	RCBA32(0x3a88) = 0x00000001;
+-	RCBA32(0x33d4) = 0xc80bc000;
++	RCBA32(0x33d4) = CONFIG(BOARD_ASUS_Z97_A) ? 0xc00bc000 : 0xc80bc000;
+ 
+ 	configure_dmi_pm(dev);
+ }
+@@ -597,7 +610,8 @@ static void lpc_init(struct device *dev)
+ 		enable_lp_clock_gating(dev);
+ 	} else {
+ 		lpt_pm_init(dev);
+-		enable_clock_gating(dev);
++		if (!CONFIG(BOARD_ASUS_Z97_A))
++			enable_clock_gating(dev);
+ 	}
+ 
+ 	/* Initialize the real time clock. */
+diff --git a/src/southbridge/intel/lynxpoint/pcie.c b/src/southbridge/intel/lynxpoint/pcie.c
+index d985ac92..159cea62 100644
+--- a/src/southbridge/intel/lynxpoint/pcie.c
++++ b/src/southbridge/intel/lynxpoint/pcie.c
+@@ -319,6 +319,18 @@ static void pcie_enable_clock_gating(void)
+ 
+ 		enabled_ports++;
+ 
++		if (CONFIG(BOARD_ASUS_Z97_A)) {
++			/* Stock Z97-A leaves 0xe1=0x00 and sets per-port 0xe8 + 0x324[5] */
++			if (rp == 1)
++				pci_update_config8(dev, 0xe8, ~0x03, 0x02);
++			else if (rp == 4)
++				pci_and_config8(dev, 0xe8, ~0x03);
++			else if (rp == 7)
++				pci_update_config8(dev, 0xe8, ~0x13, 0x10);
++			pci_or_config32(dev, 0x324, 1 << 5);
++			continue;
++		}
++
+ 		/* Enable dynamic clock gating. */
+ 		pci_or_config8(dev, 0xe1, 0x03);
+ 
+@@ -775,6 +787,8 @@ static void pch_pcie_early(struct device *dev)
+ 
+ 	/* Set AER Extended Cap ID to 01h */
+ 	u32 aech = CONFIG(PCIEXP_AER) ? 0x10001 : 0;
++	if (CONFIG(BOARD_ASUS_Z97_A) && rp == 4)
++		aech = 0;
+ 
+ 	/* For PCH-LP, set Next Cap Pointer to 200h. */
+ 	if (is_lp)
+@@ -804,14 +818,22 @@ static void pch_pcie_early(struct device *dev)
+ 
+ static void pch_pcie_init(struct device *dev)
+ {
++	const bool z97a_rp4 = CONFIG(BOARD_ASUS_Z97_A) &&
++		(dev->device == PCI_DID_INTEL_LPT_H_PCIE_RP4 ||
++		 dev->device == PCI_DID_INTEL_LPT_H_PCIE_RP4_9);
++
+ 	printk(BIOS_DEBUG, "Initializing PCH PCIe bridge.\n");
+ 
+ 	/* Enable SERR */
+-	pci_or_config16(dev, PCI_COMMAND, PCI_COMMAND_SERR);
++	if (!z97a_rp4)
++		pci_or_config16(dev, PCI_COMMAND, PCI_COMMAND_SERR);
+ 
+ 	/* Enable Bus Master */
+ 	pci_or_config16(dev, PCI_COMMAND, PCI_COMMAND_MASTER);
+ 
++	if (z97a_rp4)
++		pci_write_config32(dev, 0xec, 0x03);
++
+ 	/* Set Cache Line Size to 0x10 */
+ 	// This has no effect but the OS might expect it
+ 	pci_write_config8(dev, 0x0c, 0x10);
+diff --git a/src/southbridge/intel/lynxpoint/sata.c b/src/southbridge/intel/lynxpoint/sata.c
+index 43b08ea4..c5979dab 100644
+--- a/src/southbridge/intel/lynxpoint/sata.c
++++ b/src/southbridge/intel/lynxpoint/sata.c
+@@ -90,7 +90,10 @@ static void sata_init(struct device *dev)
+ 	pci_write_config32(dev, 0x98, reg32);
+ 
+ 	/* Setup register 9Ch: Disable alternate ID and BWG step 12 */
+-	pci_write_config16(dev, 0x9c, 1 << 5);
++	if (CONFIG(BOARD_ASUS_Z97_A))
++		pci_write_config16(dev, 0x9c, (1 << 10) | (1 << 5));
++	else
++		pci_write_config16(dev, 0x9c, 1 << 5);
+ 
+ 	/* SATA Initialization register */
+ 	reg32 = 0x183;
+@@ -103,8 +106,13 @@ static void sata_init(struct device *dev)
+ 	printk(BIOS_DEBUG, "ABAR: %p\n", (void *)abar);
+ 	/* CAP (HBA Capabilities) : enable power management */
+ 	reg32 = read32p(abar + 0x00);
+-	reg32 |= 0x0c006000;  // set PSC+SSC+SALP+SSS
+-	reg32 &= ~0x00020060; // clear SXS+EMS+PMS
++	if (CONFIG(BOARD_ASUS_Z97_A)) {
++		reg32 |= (1 << 14) | (1 << 13) | (1 << 6); /* PSC+SSC+EMS */
++		reg32 &= ~((1 << 29) | (1 << 28) | (1 << 27) | (1 << 26) | (1 << 17) | (1 << 5));
++	} else {
++		reg32 |= 0x0c006000;  // set PSC+SSC+SALP+SSS
++		reg32 &= ~0x00020060; // clear SXS+EMS+PMS
++	}
+ 	if (pch_is_lp())
+ 		reg32 |= (1 << 18);   // SAM: SATA AHCI MODE ONLY
+ 	write32p(abar + 0x00, reg32);
+@@ -124,6 +132,8 @@ static void sata_init(struct device *dev)
+ 		reg32 &= ~0x00000002;
+ 	}
+ 	write32p(abar + 0x24, reg32);
++	if (CONFIG(BOARD_ASUS_Z97_A))
++		write32p(abar + 0xa4, read32p(abar + 0xa4) & ~1U);
+ 
+ 	/* PxCMD */
+ 	const unsigned int num_ports = pch_is_lp() ? 4 : 6;
+@@ -198,9 +208,32 @@ static void sata_init(struct device *dev)
+ 	}
+ 
+ 	reg32 = pci_read_config32(dev, 0x300);
+-	reg32 |= (1 << 17) | (1 << 16);
++	if (CONFIG(BOARD_ASUS_Z97_A))
++		reg32 &= ~((1 << 17) | (1 << 16));
++	else
++		reg32 |= (1 << 17) | (1 << 16);
+ 	reg32 |= (1 << 31) | (1 << 30) | (1 << 29);
+ 	pci_write_config32(dev, 0x300, reg32);
++
++	if (CONFIG(BOARD_ASUS_Z97_A)) {
++		pci_or_config32(dev, 0x9c, 1U << 31);
++		printk(BIOS_INFO,
++		       "Z97-A: SATA 90=%04x 92=%04x 94=%08x 98=%08x 9c=%08x 300=%08x\n",
++		       pci_read_config16(dev, 0x90), pci_read_config16(dev, 0x92),
++		       pci_read_config32(dev, 0x94), pci_read_config32(dev, 0x98),
++		       pci_read_config32(dev, 0x9c), pci_read_config32(dev, 0x300));
++		printk(BIOS_INFO,
++		       "Z97-A: ABAR cap=%08x pi=%08x cap2=%08x a4=%08x P1(cmd=%08x ssts=%08x sctl=%08x serr=%08x) rcba38b0=%08x\n",
++		       read32p(abar + 0x00), read32p(abar + 0x0c),
++		       read32p(abar + 0x24), read32p(abar + 0xa4),
++		       read32p(abar + 0x198), read32p(abar + 0x1a8),
++		       read32p(abar + 0x1ac), read32p(abar + 0x1b0),
++		       RCBA32(0x38b0));
++		write32p(abar + 0x1b0, 0xffffffffU);
++		mdelay(10);
++		printk(BIOS_INFO, "Z97-A: ABAR P1 post-clear ssts=%08x serr=%08x\n",
++		       read32p(abar + 0x1a8), read32p(abar + 0x1b0));
++	}
+ }
+ 
+ static void sata_enable(struct device *dev)
+@@ -216,6 +249,9 @@ static void sata_enable(struct device *dev)
+ 	 * properly assign IO/Memory resources for the controller.
+ 	 */
+ 	pci_write_config16(dev, 0x90, 0x0060 | (config->sata_port_map ^ SATA_PORT_MASK) << 8);
++
++	if (CONFIG(BOARD_ASUS_Z97_A))
++		pci_or_config16(dev, 0x9c, (1 << 10) | (1 << 5));
+ }
+ 
+ static struct device_operations sata_ops = {
+diff --git a/src/southbridge/intel/lynxpoint/smihandler.c b/src/southbridge/intel/lynxpoint/smihandler.c
+index 966b3d89..23124053 100644
+--- a/src/southbridge/intel/lynxpoint/smihandler.c
++++ b/src/southbridge/intel/lynxpoint/smihandler.c
+@@ -59,9 +59,17 @@ static void busmaster_disable_on_bus(int bus)
+ 			hdr &= 0x7f;
+ 			if (hdr == PCI_HEADER_TYPE_BRIDGE ||
+ 			    hdr == PCI_HEADER_TYPE_CARDBUS) {
+-				unsigned int buses;
+-				buses = pci_read_config32(dev, PCI_PRIMARY_BUS);
+-				busmaster_disable_on_bus((buses >> 8) & 0xff);
++				int secbus = pci_read_config8(dev, PCI_SECONDARY_BUS);
++
++				/*
++				 * Secondary bus numbers must be strictly greater than
++				 * the parent bus number to prevent infinite recursion
++				 * on unconfigured bridges (e.g. 0 -> 2 -> 0 on ASM1083).
++				 */
++				if (secbus <= bus)
++					continue;
++
++				busmaster_disable_on_bus(secbus);
+ 			}
+ 		}
+ 	}

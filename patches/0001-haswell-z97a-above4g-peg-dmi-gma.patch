@@ -1,0 +1,338 @@
+diff --git a/src/northbridge/intel/haswell/acpi/hostbridge.asl b/src/northbridge/intel/haswell/acpi/hostbridge.asl
+index 983190c1..71fba247 100644
+--- a/src/northbridge/intel/haswell/acpi/hostbridge.asl
++++ b/src/northbridge/intel/haswell/acpi/hostbridge.asl
+@@ -143,6 +143,12 @@ Name (MCRS, ResourceTemplate()
+ 			0x00000000, 0x00000000, 0x00000000, 0x00000000,
+ 			0x00000000,,, PM02)
+ #endif
++	// PCI Memory Region above 4G (TOUUD -> 1 << cpu_phys_address_size)
++	QWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++			NonCacheable, ReadWrite,
++			0x00000000, 0x00000000, 0x00000000, 0x00000000,
++			0x00000000,,, PM64)
++
+ 	// TPM Area (0xfed40000-0xfed44fff)
+ 	DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
+ 			Cacheable, ReadWrite,
+@@ -150,6 +156,9 @@ Name (MCRS, ResourceTemplate()
+ 			0x00005000,,, TPMR)
+ })
+ 
++External (\A4GS, IntObj)
++External (\A4GB, IntObj)
++
+ Method (_CRS, 0, Serialized)
+ {
+ 	// Set highest PCI bus and length
+@@ -212,6 +221,15 @@ Method (_CRS, 0, Serialized)
+ 		PM2L = PM2M - PM2B + 1
+ 	}
+ #endif
++	If (\A4GS != 0) {
++		CreateQwordField (MCRS, ^PM64._MIN, M64N)
++		CreateQwordField (MCRS, ^PM64._MAX, M64X)
++		CreateQwordField (MCRS, ^PM64._LEN, M64L)
++		M64L = \A4GS
++		M64N = \A4GB
++		M64X = M64N + M64L - 1
++	}
++
+ 	Return (MCRS)
+ }
+ 
+diff --git a/src/northbridge/intel/haswell/early_dmi.c b/src/northbridge/intel/haswell/early_dmi.c
+index 9941242f..e980b2b2 100644
+--- a/src/northbridge/intel/haswell/early_dmi.c
++++ b/src/northbridge/intel/haswell/early_dmi.c
+@@ -26,14 +26,22 @@ static void dmi_setup_physical_layer(void)
+ 	dmibar_clrsetbits32(0x22c, 0xffff, 0x2020);
+ 
+ 	/* Write SA reference code version */
+-	dmibar_write32(0x71c, 0x0000000f);
+-	dmibar_write32(0x720, 0x01060200);
++	if (CONFIG(BOARD_ASUS_Z97_A)) {
++		dmibar_write32(0x71c, 0x00000013);
++		dmibar_write32(0x720, 0x02000000);
++	} else {
++		dmibar_write32(0x71c, 0x0000000f);
++		dmibar_write32(0x720, 0x01060200);
++	}
+ 
+ 	/* We also have to bring up the PCH side of the DMI link */
+ 	pch_dmi_setup_physical_layer();
+ 
+ 	/* Write-once settings */
+-	dmibar_clrsetbits32(DMILCAP, 0x3f00f, 2 << 0);
++	if (CONFIG(BOARD_ASUS_Z97_A))
++		dmibar_clrsetbits32(DMILCAP, 0xf, 2 << 0);
++	else
++		dmibar_clrsetbits32(DMILCAP, 0x3f00f, 2 << 0);
+ 
+ 	printk(BIOS_DEBUG, "Retraining DMI at Gen2 speeds...\n");
+ 	dmi_print_link_status(BIOS_DEBUG);
+@@ -63,8 +71,10 @@ static void dmi_tc_vc_mapping(void)
+ 		dmibar_setbits8(0xa78, 1 << 1);
+ 
+ 	/* Each TC is mapped to one and only one VC */
+-	const u32 vc0 = DMI_VC_CFG(0, (1 << 6) | (1 << 5) | (1 << 4) | (1 << 3) | (1 << 0));
+-	const u32 vc1 = DMI_VC_CFG(1, (1 << 1));
++	const u32 vc0 = CONFIG(BOARD_ASUS_Z97_A)
++		? DMI_VC_CFG(0, (1 << 6) | (1 << 5) | (1 << 4) | (1 << 3) | (1 << 1) | (1 << 0))
++		: DMI_VC_CFG(0, (1 << 6) | (1 << 5) | (1 << 4) | (1 << 3) | (1 << 0));
++	const u32 vc1 = CONFIG(BOARD_ASUS_Z97_A) ? (1U << 24) : DMI_VC_CFG(1, (1 << 1));
+ 	const u32 vcp = DMI_VC_CFG(2, (1 << 2));
+ 	const u32 vcm = DMI_VC_CFG(7, (1 << 7));
+ 	dmibar_write32(DMIVC0RCTL, vc0);
+@@ -83,7 +93,8 @@ static void dmi_tc_vc_mapping(void)
+ 
+ 	printk(BIOS_DEBUG, "Waiting for SA  DMI VC negotiation... ");
+ 	do {} while (dmibar_read16(DMIVC0RSTS) & VCNEGPND);
+-	do {} while (dmibar_read16(DMIVC1RSTS) & VCNEGPND);
++	if (vc1 & VC_ACTIVE)
++		do {} while (dmibar_read16(DMIVC1RSTS) & VCNEGPND);
+ 	do {} while (dmibar_read16(DMIVCPRSTS) & VCNEGPND);
+ 	do {} while (dmibar_read16(DMIVCMRSTS) & VCNEGPND);
+ 	printk(BIOS_DEBUG, "done!\n");
+diff --git a/src/northbridge/intel/haswell/early_pcie.c b/src/northbridge/intel/haswell/early_pcie.c
+index 01ccbeb1..71b7e1bf 100644
+--- a/src/northbridge/intel/haswell/early_pcie.c
++++ b/src/northbridge/intel/haswell/early_pcie.c
+@@ -91,12 +91,12 @@ void peg_dmi_recipe(const bool is_peg, const pci_devfn_t dev)
+ 		peg_dmi_unset_and_set_mask_pcicfg(bank, 0x910 + i, 0x0f, 0x00, 10, always);
+ 
+ 	for (size_t i = 0; i < bundles; i += BUNDLE_STEP)
+-		peg_dmi_unset_and_set_mask_pcicfg(bank, 0x910 + i, 0x07, 0x00, 18, always);
++		peg_dmi_unset_and_set_mask_pcicfg(bank, 0x80c + i, 0x07, 0x00, 18, always);
+ 
+ 	peg_dmi_unset_and_set_mask_vcu_mmio(0x0c008001, 0x1f, 0x03, 25, is_peg);
+ 	peg_dmi_unset_and_set_mask_vcu_mmio(0x0c0c8001, 0x3f, 0x00, 23, is_dmi);
+ 
+-	peg_dmi_unset_and_set_mask_pcicfg(bank, 0xc28, 0x1f, 0x13, 18, always);
++	peg_dmi_unset_and_set_mask_pcicfg(bank, 0xc28, 0x1f, 0x13, 0, always);
+ 
+ 	peg_dmi_unset_and_set_mask_common(is_peg, 0xc38, 0x01, 0x00,  6, always);
+ 	peg_dmi_unset_and_set_mask_common(is_peg, 0x260, 0x03, 0x02,  0, always);
+diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
+index bb59d5d6..41397cf0 100644
+--- a/src/northbridge/intel/haswell/early_peg.c
++++ b/src/northbridge/intel/haswell/early_peg.c
+@@ -2,6 +2,7 @@
+ 
+ #include <console/console.h>
+ #include <device/pci_ops.h>
++#include <option.h>
+ #include <northbridge/intel/haswell/haswell.h>
+ #include <types.h>
+ 
+@@ -46,7 +47,20 @@ static void start_peg2_link_training(const u8 func)
+ 
+ void northbridge_setup_peg(void)
+ {
+-	const u32 deven = pci_read_config32(HOST_BRIDGE, DEVEN);
++	u32 deven = pci_read_config32(HOST_BRIDGE, DEVEN);
++	const unsigned int peg_mode = get_uint_option("peg_bifurcation", 0);
++	u32 deven_mask = 0;
++
++	if (peg_mode == 1)
++		deven_mask = DEVEN_D1F1EN | DEVEN_D1F2EN;
++	else if (peg_mode == 2)
++		deven_mask = DEVEN_D1F2EN;
++
++	if (deven & deven_mask) {
++		deven &= ~deven_mask;
++		pci_write_config32(HOST_BRIDGE, DEVEN, deven);
++	}
++	printk(BIOS_INFO, "PEG: mode=%u DEVEN=0x%08x\n", peg_mode, deven);
+ 
+ 	for (u8 func = 0; func < MAX_PEG_FUNC; func++) {
+ 		if (deven & deven_for_peg(func)) {
+diff --git a/src/northbridge/intel/haswell/gma.c b/src/northbridge/intel/haswell/gma.c
+index fc44a98a..fd6ae157 100644
+--- a/src/northbridge/intel/haswell/gma.c
++++ b/src/northbridge/intel/haswell/gma.c
+@@ -157,7 +157,12 @@ static void gma_pm_init_haswell(void)
+ 	gtt_write(0x940c, 0x02000001);
+ 
+ 	/* Set RP1 graphics frequency */
+-	gtt_write(0xa008, 0x08000000);
++	if (CONFIG(BOARD_ASUS_Z97_A)) {
++		const u32 rp1_gfx_freq = (mchbar_read32(0x5998) >> 8) & 0xff;
++		gtt_write(0xa008, rp1_gfx_freq << 24);
++	} else {
++		gtt_write(0xa008, 0x08000000);
++	}
+ 
+ 	/* Wake Rate Limits */
+ 	gtt_write(0xa090, 0x00000000);
+@@ -534,7 +539,7 @@ static void gma_cdclk_init(struct device *dev, bool is_broadwell)
+ 		gtt_pcode_write(HSW_PCODE_DE_WRITE_FREQ_REQ, cdsel);
+ 	}
+ 
+-	if (is_broadwell) {
++	if (is_broadwell || CONFIG(BOARD_ASUS_Z97_A)) {
+ 		u32 cdval, dpdiv;
+ 		switch (cdclk) {
+ 		case GT_CDCLK_337:
+@@ -557,8 +562,10 @@ static void gma_cdclk_init(struct device *dev, bool is_broadwell)
+ 			return;
+ 		}
+ 
+-		/* Program CD Clock Frequency */
+-		gtt_rmw(0x46200, 0xfffffc00, cdval);
++		if (is_broadwell || CONFIG(BOARD_ASUS_Z97_A)) {
++			/* Program CD Clock Frequency */
++			gtt_rmw(0x46200, 0xfffffc00, cdval);
++		}
+ 
+ 		/* Set CPU DP AUX 2X bit clock dividers */
+ 		gtt_rmw(0x64010, 0xfffff800, dpdiv);
+@@ -657,8 +664,27 @@ static void gma_func0_disable(struct device *dev)
+ 	pci_or_config16(pcidev_on_root(0, 0), GGC, 1 << 1);
+ }
+ 
++static void gma_read_resources(struct device *dev)
++{
++	struct resource *res;
++
++	pci_dev_read_resources(dev);
++
++	/*
++	 * Coreboot ramstage is 32-bit and accesses GTTMMADR (BAR0) and GMADR
++	 * (BAR2) via 32-bit pointers. Keep IGD BARs below 4 GiB even when
++	 * CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION is enabled for discrete GPUs.
++	 */
++	for (res = dev->resource_list; res; res = res->next) {
++		if (res->flags & IORESOURCE_MEM) {
++			res->limit = UINT32_MAX;
++			res->flags &= ~IORESOURCE_ABOVE_4G;
++		}
++	}
++}
++
+ static struct device_operations gma_func0_ops = {
+-	.read_resources		= pci_dev_read_resources,
++	.read_resources		= gma_read_resources,
+ 	.set_resources		= pci_dev_set_resources,
+ 	.enable_resources	= pci_dev_enable_resources,
+ 	.init			= gma_func0_init,
+diff --git a/src/northbridge/intel/haswell/native_raminit/memory_map.c b/src/northbridge/intel/haswell/native_raminit/memory_map.c
+index 6a4bd0a7..748203b0 100644
+--- a/src/northbridge/intel/haswell/native_raminit/memory_map.c
++++ b/src/northbridge/intel/haswell/native_raminit/memory_map.c
+@@ -139,6 +139,12 @@ static void program_memory_map(const struct memory_map_data *map)
+ 		pci_or_config32(HOST_BRIDGE, MESEG_LIMIT, ME_STLEN_EN);
+ 	}
+ 	map_write_reg32(TOLUD, map->tolud);
++	if (CONFIG(BOARD_ASUS_Z97_A)) {
++		if (map->gms_size)
++			pci_write_config32(HOST_BRIDGE, PAVPC, ((map->tolud - 1) << 20) | 0x17);
++		else
++			pci_write_config32(HOST_BRIDGE, PAVPC, 1 << 2);
++	}
+ 	map_write_reg32(BDSM,  map->bdsm_base);
+ 	map_write_reg32(BGSM,  map->gtt_base);
+ 	map_write_reg32(TSEG,  map->tseg_base);
+diff --git a/src/northbridge/intel/haswell/northbridge.c b/src/northbridge/intel/haswell/northbridge.c
+index 16c7d594..a6caf572 100644
+--- a/src/northbridge/intel/haswell/northbridge.c
++++ b/src/northbridge/intel/haswell/northbridge.c
+@@ -1,6 +1,10 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <acpi/acpigen.h>
++#include <commonlib/helpers.h>
+ #include <console/console.h>
++#include <cpu/cpu.h>
++#include <option.h>
+ #include <cpu/intel/haswell/haswell.h>
+ #include <delay.h>
+ #include <drivers/intel/oc_mailbox/oc_mailbox.h>
+@@ -350,6 +354,12 @@ static void disable_devices(void)
+ 		}
+ 	}
+ 
++	const unsigned int peg_mode = get_uint_option("peg_bifurcation", 0);
++	if (peg_mode == 1)
++		deven &= ~(DEVEN_D1F1EN | DEVEN_D1F2EN);
++	else if (peg_mode == 2)
++		deven &= ~DEVEN_D1F2EN;
++
+ 	pci_write_config32(host_dev, DEVEN, deven);
+ }
+ 
+@@ -376,7 +386,10 @@ static void northbridge_dmi_init(void)
+ 	/* Steps prior to DMI ASPM */
+ 	if (is_haswell_h) {
+ 		/* Configure DMI De-Emphasis */
+-		dmibar_setbits16(DMILCTL2, 1 << 6);	/* 0b: -6.0 dB, 1b: -3.5 dB */
++		if (CONFIG(BOARD_ASUS_Z97_A))
++			dmibar_write16(DMILCTL2, dmibar_read16(DMILCTL2) & ~(1 << 6)); /* -6.0 dB */
++		else
++			dmibar_setbits16(DMILCTL2, 1 << 6);	/* 0b: -6.0 dB, 1b: -3.5 dB */
+ 
+ 		dmibar_setbits32(DMIL0SLAT, 1 << 31);
+ 		dmibar_setbits32(DMILLTC, 1 << 29);
+@@ -388,7 +401,7 @@ static void northbridge_dmi_init(void)
+ 	dmibar_write32(DMIUESTS, 0xffffffff);
+ 	dmibar_write32(DMICESTS, 0xffffffff);
+ 
+-	if (is_haswell_h) {
++	if (is_haswell_h && !CONFIG(BOARD_ASUS_Z97_A)) {
+ 		/* Enable ASPM L0s and L1 on SA link, should happen before PCH link */
+ 		dmibar_setbits16(DMILCTL, 1 << 1 | 1 << 0);
+ 	}
+@@ -473,6 +486,11 @@ static void northbridge_init(struct device *dev)
+ 
+ static void northbridge_final(struct device *dev)
+ {
++	if (CONFIG(BOARD_ASUS_Z97_A)) {
++		printk(BIOS_INFO, "Z97-A: PAVPC=0x%08x TOLUD=0x%08x\n",
++		       pci_read_config32(dev, PAVPC), pci_read_config32(dev, TOLUD));
++	}
++
+ 	pci_or_config16(dev, GGC,         1 << 0);
+ 	pci_or_config32(dev, DPR,         1 << 0);
+ 	pci_or_config32(dev, MESEG_LIMIT, 1 << 10);
+@@ -503,6 +521,31 @@ static void northbridge_final(struct device *dev)
+ 	mchbar_setbits32(HDAUDRID, 0);
+ }
+ 
++#if CONFIG(HAVE_ACPI_TABLES)
++static void set_above_4g_pci(const struct device *dev)
++{
++	uint64_t touud = ((uint64_t)pci_read_config32(dev, TOUUD + 4) << 32) |
++			 pci_read_config32(dev, TOUUD);
++	touud &= ~((1ULL << 20) - 1);
++
++	const uint64_t base = MAX(touud, 4ULL * GiB);
++	const uint64_t limit = 1ULL << cpu_phys_address_size();
++	const uint64_t len = (limit > base) ? (limit - base) : 0;
++
++	acpigen_write_scope("\\");
++	acpigen_write_name_qword("A4GB", base);
++	acpigen_write_name_qword("A4GS", len);
++	acpigen_pop_len();
++
++	printk(BIOS_DEBUG, "PCI space above 4GB MMIO is at 0x%llx, len = 0x%llx\n", base, len);
++}
++
++static void mc_gen_ssdt(const struct device *dev)
++{
++	set_above_4g_pci(dev);
++}
++#endif
++
+ static struct device_operations mc_ops = {
+ 	.read_resources		= mc_read_resources,
+ 	.set_resources		= pci_dev_set_resources,
+@@ -510,6 +553,9 @@ static struct device_operations mc_ops = {
+ 	.init			= northbridge_init,
+ 	.final			= northbridge_final,
+ 	.ops_pci		= &pci_dev_ops_pci,
++#if CONFIG(HAVE_ACPI_TABLES)
++	.acpi_fill_ssdt		= mc_gen_ssdt,
++#endif
+ };
+ 
+ static const unsigned short mc_pci_device_ids[] = {

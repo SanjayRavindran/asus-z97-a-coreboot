@@ -1,0 +1,455 @@
+diff --git a/common/hw-gfx-edid.adb b/common/hw-gfx-edid.adb
+index c9f8da0..e07a0cf 100644
+--- a/common/hw-gfx-edid.adb
++++ b/common/hw-gfx-edid.adb
+@@ -223,4 +223,268 @@ package body HW.GFX.EDID is
+       return False;
+    end Has_HDMI_Sink;
+ 
++   ----------------------------------------------------------------------------
++
++   procedure Parse_DTD
++     (Block     : in     Raw_EDID_Data;
++      Base      : in     Raw_EDID_Index;
++      BPC       : in     BPC_Type;
++      HDMI_Sink : in     Boolean;
++      Max_Clock : in     Frequency_Type;
++      Max_H     : in     Width_Type;
++      Max_V     : in     Height_Type;
++      Mode      :    out Mode_Type;
++      Valid_DTD :    out Boolean)
++   is
++      function Read_12
++        (Lower_8, Upper_4  : Raw_EDID_Index;
++         Shift             : Natural)
++         return Word16 is
++        (             Word16 (Block (Lower_8)) or
++         (Shift_Left (Word16 (Block (Upper_4)), Shift) and 16#0f00#));
++
++      function Read_10
++        (Lower_8, Upper_2  : Raw_EDID_Index;
++         Shift             : Natural)
++         return Word16 is
++        (             Word16 (Block (Lower_8)) or
++         (Shift_Left (Word16 (Block (Upper_2)), Shift) and 16#0300#));
++
++      function Read_6
++        (Lower_4     : Raw_EDID_Index;
++         Lower_Shift : Natural;
++         Upper_2     : Raw_EDID_Index;
++         Upper_Shift : Natural)
++         return Word8 is
++        ((Shift_Right (Word8 (Block (Lower_4)), Lower_Shift) and 16#0f#) or
++         (Shift_Left  (Word8 (Block (Upper_2)), Upper_Shift) and 16#30#));
++
++      Raw_Clk : Int64;
++      Clock   : Int64;
++      H_Vis   : Int32;
++      H_Blank : Int32;
++      H_Off   : Int32;
++      H_Width : Int32;
++      V_Vis   : Int32;
++      V_Blank : Int32;
++      V_Off   : Int32;
++      V_Width : Int32;
++      H_Tot   : Int32;
++      V_Tot   : Int32;
++      Frames  : Int64;
++   begin
++      Mode := Invalid_Mode;
++      Valid_DTD := False;
++
++      if Base > 109 then
++         return;
++      end if;
++
++      Raw_Clk := Int64 (Read_LE16 (Block, Base));
++      if Raw_Clk = 0 then
++         return;
++      end if;
++      Clock := Raw_Clk * 10_000;
++
++      -- Skip interlaced descriptors
++      if (Block (Base + 17) and 16#80#) /= 0 then
++         return;
++      end if;
++
++      H_Vis   := Int32 (Read_12 (Base +  2, Base +  4, 4));
++      H_Blank := Int32 (Read_12 (Base +  3, Base +  4, 8));
++      H_Off   := Int32 (Read_10 (Base +  8, Base + 11, 2));
++      H_Width := Int32 (Read_10 (Base +  9, Base + 11, 4));
++      V_Vis   := Int32 (Read_12 (Base +  5, Base +  7, 4));
++      V_Blank := Int32 (Read_12 (Base +  6, Base +  7, 8));
++      V_Off   := Int32 (Read_6  (Base + 10, 4, Base + 11, 2));
++      V_Width := Int32 (Read_6  (Base + 10, 0, Base + 11, 4));
++
++      if H_Vis <= 0 or else H_Off <= 0 or else H_Width <= 0 or else
++         V_Vis <= 0 or else V_Off <= 0 or else V_Width <= 0 or else
++         H_Blank < H_Off + H_Width or else
++         V_Blank < V_Off + V_Width
++      then
++         return;
++      end if;
++
++      H_Tot := H_Vis + H_Blank;
++      V_Tot := V_Vis + V_Blank;
++
++      if H_Tot > Int32 (Width_Type'Last) or else
++         V_Tot > Int32 (Height_Type'Last) or else
++         Clock < Frequency_Type'First or else
++         Clock > Max_Clock or else
++         H_Vis > Int32 (Max_H) or else
++         V_Vis > Int32 (Max_V)
++      then
++         return;
++      end if;
++
++      Frames := Int64 (H_Tot) * Int64 (V_Tot);
++      if Clock < Frames * 23 or else Clock > Frames * 75 then
++         return;
++      end if;
++
++      Mode := Mode_Type'
++        (Dotclock             => Frequency_Type (Clock),
++         H_Visible            => Width_Type (H_Vis),
++         H_Sync_Begin         => Width_Type (H_Vis + H_Off),
++         H_Sync_End           => Width_Type (H_Vis + H_Off + H_Width),
++         H_Total              => Width_Type (H_Tot),
++         V_Visible            => Height_Type (V_Vis),
++         V_Sync_Begin         => Height_Type (V_Vis + V_Off),
++         V_Sync_End           => Height_Type (V_Vis + V_Off + V_Width),
++         V_Total              => Height_Type (V_Tot),
++         H_Sync_Active_High   => (Block (Base + 17) and 16#02#) /= 0,
++         V_Sync_Active_High   => (Block (Base + 17) and 16#04#) /= 0,
++         BPC                  => BPC,
++         HDMI_Sink            => HDMI_Sink);
++      Valid_DTD := True;
++   end Parse_DTD;
++
++   procedure Select_Best_Mode
++     (Raw_EDID  : in     Raw_EDID_Data;
++      Raw_Ext   : in     Raw_EDID_Data;
++      Has_Ext   : in     Boolean;
++      HDMI_Sink : in     Boolean;
++      Max_Clock : in     Frequency_Type;
++      Max_H     : in     Width_Type;
++      Max_V     : in     Height_Type;
++      Mode      :    out Mode_Type;
++      Found     :    out Boolean)
++   is
++      Base_DTDs : constant array (1 .. 4) of Raw_EDID_Index :=
++        (DESCRIPTOR_1, DESCRIPTOR_1 + 18, DESCRIPTOR_1 + 36, DESCRIPTOR_1 + 54);
++      Base_BPC  : BPC_Type;
++      Cand      : Mode_Type;
++      Cand_OK   : Boolean;
++      Best_Area : Int64 := 0;
++      Cand_Area : Int64;
++
++      procedure Consider (Candidate : in Mode_Type) is
++      begin
++         Cand_Area := Int64 (Candidate.H_Visible) * Int64 (Candidate.V_Visible);
++         if not Found or else
++            Cand_Area > Best_Area or else
++            (Cand_Area = Best_Area and then Candidate.Dotclock > Mode.Dotclock)
++         then
++            Mode := Candidate;
++            Best_Area := Cand_Area;
++            Found := True;
++         end if;
++      end Consider;
++   begin
++      Mode := Invalid_Mode;
++      Found := False;
++
++      if Raw_EDID (REVISION) < 4 or else
++         (Raw_EDID (INPUT) and INPUT_DIGITAL) = 16#00# or else
++         (Raw_EDID (INPUT) and INPUT_DIGITAL_DEPTH_MASK) = INPUT_DIGITAL_DEPTH_UNDEF or else
++         (Raw_EDID (INPUT) and INPUT_DIGITAL_DEPTH_MASK) = INPUT_DIGITAL_DEPTH_RESERVED
++      then
++         Base_BPC := Auto_BPC;
++      else
++         Base_BPC := 4 + 2 * Pos64 (Shift_Right
++           (Raw_EDID (INPUT) and INPUT_DIGITAL_DEPTH_MASK,
++            INPUT_DIGITAL_DEPTH_SHIFT));
++         if Base_BPC > 8 then
++            Base_BPC := 8;
++         end if;
++      end if;
++
++      for I in Base_DTDs'Range loop
++         Parse_DTD
++           (Block     => Raw_EDID,
++            Base      => Base_DTDs (I),
++            BPC       => Base_BPC,
++            HDMI_Sink => HDMI_Sink,
++            Max_Clock => Max_Clock,
++            Max_H     => Max_H,
++            Max_V     => Max_V,
++            Mode      => Cand,
++            Valid_DTD => Cand_OK);
++         if Cand_OK then
++            Consider (Cand);
++         end if;
++      end loop;
++
++      if Has_Ext and then
++         Raw_Ext (0) = CEA_EXT_TAG and then
++         Raw_Ext (CEA_EXT_REVISION) >= 3 and then
++         Checksum_Valid (Raw_Ext)
++      then
++         declare
++            Pos : Natural := Natural (Raw_Ext (CEA_EXT_DTD_OFFSET));
++         begin
++            if Pos >= CEA_EXT_DATA_BLOCKS then
++               while Pos <= 109 loop
++                  Parse_DTD
++                    (Block     => Raw_Ext,
++                     Base      => Raw_EDID_Index (Pos),
++                     BPC       => Base_BPC,
++                     HDMI_Sink => HDMI_Sink,
++                     Max_Clock => Max_Clock,
++                     Max_H     => Max_H,
++                     Max_V     => Max_V,
++                     Mode      => Cand,
++                     Valid_DTD => Cand_OK);
++                  if Cand_OK then
++                     Consider (Cand);
++                  end if;
++                  Pos := Pos + 18;
++               end loop;
++            end if;
++         end;
++      end if;
++
++      -- Fallback to exact CTA-861 timings when EDID only advertises e.g. 4K@60 (594 MHz)
++      if not Found then
++         if HDMI_Sink and then
++            Max_Clock >= 297_000_000 and then
++            Max_H >= 3840 and then
++            Max_V >= 2160 and then
++            Has_Preferred_Mode (Raw_EDID) and then
++            Preferred_Mode (Raw_EDID).H_Visible >= 3840
++         then
++            -- CTA-861 VIC 95: 3840x2160 @ 30.000 Hz (297.000 MHz)
++            Mode := Mode_Type'
++              (Dotclock             => 297_000_000,
++               H_Visible            => 3840,
++               H_Sync_Begin         => 4016,
++               H_Sync_End           => 4104,
++               H_Total              => 4400,
++               V_Visible            => 2160,
++               V_Sync_Begin         => 2168,
++               V_Sync_End           => 2178,
++               V_Total              => 2250,
++               H_Sync_Active_High   => True,
++               V_Sync_Active_High   => True,
++               BPC                  => 8,
++               HDMI_Sink            => True);
++            Found := True;
++         elsif Max_Clock >= 148_500_000 and then
++               Max_H >= 1920 and then
++               Max_V >= 1080
++         then
++            -- CTA-861 VIC 16: 1920x1080 @ 60.000 Hz (148.500 MHz)
++            Mode := Mode_Type'
++              (Dotclock             => 148_500_000,
++               H_Visible            => 1920,
++               H_Sync_Begin         => 2008,
++               H_Sync_End           => 2052,
++               H_Total              => 2200,
++               V_Visible            => 1080,
++               V_Sync_Begin         => 1084,
++               V_Sync_End           => 1089,
++               V_Total              => 1125,
++               H_Sync_Active_High   => True,
++               V_Sync_Active_High   => True,
++               BPC                  => 8,
++               HDMI_Sink            => HDMI_Sink);
++            Found := True;
++         end if;
++      end if;
++   end Select_Best_Mode;
++
+ end HW.GFX.EDID;
+diff --git a/common/hw-gfx-edid.ads b/common/hw-gfx-edid.ads
+index 9455410..fc807e4 100644
+--- a/common/hw-gfx-edid.ads
++++ b/common/hw-gfx-edid.ads
+@@ -77,4 +77,19 @@ is
+    -- Returns False if the block isn't a valid CEA-861 extension.
+    function Has_HDMI_Sink (Raw_Ext : Raw_EDID_Data) return Boolean;
+ 
++   -- Pick highest-resolution mode within per-port hardware limits from Base
++   -- EDID + CEA-861 DTDs, falling back to exact CTA-861 4K30/1080p60 when needed.
++   procedure Select_Best_Mode
++     (Raw_EDID  : in     Raw_EDID_Data;
++      Raw_Ext   : in     Raw_EDID_Data;
++      Has_Ext   : in     Boolean;
++      HDMI_Sink : in     Boolean;
++      Max_Clock : in     Frequency_Type;
++      Max_H     : in     Width_Type;
++      Max_V     : in     Height_Type;
++      Mode      :    out Mode_Type;
++      Found     :    out Boolean)
++   with
++      Pre => Valid (Raw_EDID);
++
+ end HW.GFX.EDID;
+diff --git a/common/hw-gfx-gma-config.ads.template b/common/hw-gfx-gma-config.ads.template
+index f3b1aa8..52f6f1d 100644
+--- a/common/hw-gfx-gma-config.ads.template
++++ b/common/hw-gfx-gma-config.ads.template
+@@ -474,7 +474,8 @@ private package HW.GFX.GMA.Config is
+      (case Gen is
+          when Generation'First .. G45  => 165_000_000, -- i945: no HDMI, moot
+          when Ironlake                 => 225_000_000,
+-         when Haswell .. Skylake       => 300_000_000,
++         when Haswell                  => 297_000_000,
++         when Broxton .. Skylake       => 300_000_000,
+          when Tigerlake .. AlderlakeP  => 600_000_000);
+ 
+    ----------------------------------------------------------------------------
+diff --git a/common/hw-gfx-gma-display_probing.adb b/common/hw-gfx-gma-display_probing.adb
+index 94b5c49..70fe30a 100644
+--- a/common/hw-gfx-gma-display_probing.adb
++++ b/common/hw-gfx-gma-display_probing.adb
+@@ -125,11 +125,12 @@ is
+       end loop;
+    end Read_EDID;
+ 
+-   procedure Read_HDMI_Sink
+-     (HDMI_Sink :    out Boolean;
++   procedure Read_HDMI_Ext
++     (Raw_Ext   :    out EDID.Raw_EDID_Data;
++      Has_Ext   :    out Boolean;
++      HDMI_Sink :    out Boolean;
+       Port      : in     Active_Port_Type)
+    is
+-      Raw_Ext : EDID.Raw_EDID_Data;
+       Raw_Ext_Length : GFX.I2C.Transfer_Length := Raw_Ext'Length;
+       Success : Boolean;
+    begin
+@@ -142,15 +143,16 @@ is
+          Data     => Raw_Ext,
+          Success  => Success,
+          Offset   => 16#80#);  -- first extension block
+-      Success := Success and Raw_Ext_Length = Raw_Ext'Length;
++      Has_Ext := Success and Raw_Ext_Length = Raw_Ext'Length;
+ 
+-      if Success then
++      if Has_Ext then
+          pragma Debug (Debug.Put_Buffer ("EDID Ext", Raw_Ext, Raw_Ext_Length));
+          HDMI_Sink := EDID.Has_HDMI_Sink (Raw_Ext);
+       else
++         Raw_Ext := (others => 0);
+          HDMI_Sink := False;
+       end if;
+-   end Read_HDMI_Sink;
++   end Read_HDMI_Ext;
+ 
+    procedure Probe_Port
+      (Pipe_Cfg : in out Pipe_Config;
+@@ -158,7 +160,14 @@ is
+       Success  :    out Boolean)
+    with Pre => True
+    is
+-      Raw_EDID : EDID.Raw_EDID_Data with Relaxed_Initialization;
++      Raw_EDID     : EDID.Raw_EDID_Data with Relaxed_Initialization;
++      Raw_Ext      : EDID.Raw_EDID_Data := (others => 0);
++      Has_Ext      : Boolean := False;
++      Is_HDMI_Sink : Boolean := False;
++      Max_Clock    : Frequency_Type;
++      Max_H        : Width_Type;
++      Max_V        : Height_Type;
++      Mode_Found   : Boolean;
+    begin
+       Success := Config.Valid_Port (Port);
+ 
+@@ -173,12 +182,48 @@ is
+           EDID.Has_Preferred_Mode (Raw_EDID))
+       then
+          Pipe_Cfg.Port := Port;
+-         Pipe_Cfg.Mode := EDID.Preferred_Mode (Raw_EDID);
+ 
+          if Config_Helpers.To_Display_Type (Port) = HDMI and
+             EDID.Has_Extension (Raw_EDID)
+          then
+-            Read_HDMI_Sink (Pipe_Cfg.Mode.HDMI_Sink, Port);
++            Read_HDMI_Ext (Raw_Ext, Has_Ext, Is_HDMI_Sink, Port);
++         end if;
++
++         case Config_Helpers.To_Display_Type (Port) is
++            when DP =>
++               Max_Clock := Frequency_Type'Min (Config.Max_CDClk, 533_250_000);
++               Max_H := 4096;
++               Max_V := 2304;
++            when HDMI =>
++               -- Cap pre-OS HDMI/DVI to single-link 165 MHz / 1920x1200@60 for universal monitor & capture compatibility
++               Max_Clock := 165_000_000;
++               Max_H := 1920;
++               Max_V := 1200;
++            when VGA =>
++               Max_Clock := 162_000_000;
++               Max_H := 1920;
++               Max_V := 1200;
++            when others =>
++               Max_Clock := 165_000_000;
++               Max_H := 1920;
++               Max_V := 1200;
++         end case;
++
++         EDID.Select_Best_Mode
++           (Raw_EDID  => Raw_EDID,
++            Raw_Ext   => Raw_Ext,
++            Has_Ext   => Has_Ext,
++            HDMI_Sink => Is_HDMI_Sink,
++            Max_Clock => Max_Clock,
++            Max_H     => Max_H,
++            Max_V     => Max_V,
++            Mode      => Pipe_Cfg.Mode,
++            Found     => Mode_Found);
++         if not Mode_Found then
++            Pipe_Cfg.Mode := EDID.Preferred_Mode (Raw_EDID);
++         end if;
++         if Config_Helpers.To_Display_Type (Port) = HDMI then
++            Pipe_Cfg.Mode.HDMI_Sink := False;
+          end if;
+ 
+          pragma Warnings (GNATprove, Off, "unused assignment to ""Raw_EDID""",
+diff --git a/common/hw-gfx-gma-i2c.adb b/common/hw-gfx-gma-i2c.adb
+index 50bb695..5a3b9ff 100644
+--- a/common/hw-gfx-gma-i2c.adb
++++ b/common/hw-gfx-gma-i2c.adb
+@@ -210,7 +210,7 @@ package body HW.GFX.GMA.I2C is
+       -- work, if not, it shouldn't matter.
+       Registers.Write
+         (Register => GMBUS_Regs (0),
+-         Value    => GMBUS0_GMBUS_RATE_SELECT_100KHZ or
++         Value    => GMBUS0_GMBUS_RATE_SELECT_50KHZ or
+                      GMBUS0_PIN_PAIR_SELECT (Port));
+       Check_And_Reset (Success);
+    end Init_GMBUS;
+diff --git a/common/hw-gfx-gma-pipe_setup.adb b/common/hw-gfx-gma-pipe_setup.adb
+index f915a52..3c61593 100644
+--- a/common/hw-gfx-gma-pipe_setup.adb
++++ b/common/hw-gfx-gma-pipe_setup.adb
+@@ -1134,6 +1134,19 @@ package body HW.GFX.GMA.Pipe_Setup is
+       -- Disable the cursor first.
+       Update_Cursor (Pipe, Pipe_Cfg.Framebuffer, Default_Cursor);
+ 
++      if Config.CPU_Haswell or Config.CPU_Broadwell then
++         declare
++            Line_Time : constant Int64 :=
++               Int64'Max (0, Int64'Min (511,
++                 (8 * Int64 (Mode.H_Total) * 1_000_000 +
++                  Int64 (Mode.Dotclock) / 2) / Int64 (Mode.Dotclock)));
++         begin
++            Registers.Write
++              (Register => Controllers (Pipe).WM_LINETIME,
++               Value    => Word32 (Line_Time));
++         end;
++      end if;
++
+       Setup_Display (Controllers (Pipe), Pipe_Cfg.Framebuffer, Mode.BPC, Dither);
+       Setup_Scaling (Controllers (Pipe), Pipe_Cfg, Mode);
+    end Setup_FB;
