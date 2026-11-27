@@ -18,7 +18,7 @@
 [**UEFI Diagnostic & Flash Tool**](tools/z97a_uefi_tool/) ·
 [**Agent Skills**](.agents/skills/)
 
-Open-source **Coreboot (`-z97a-v0.15`) + EDK2 `UefiPayloadPkg` + iPXE** motherboard port, Haswell & Lynx Point Z97 stock-parity chipset patches ([`patches/`](patches/)), pre-OS UEFI diagnostic & SPI delta-flasher (`z97a_tool.efi`, [`tools/z97a_uefi_tool/`](tools/z97a_uefi_tool/)), `M.2` vs `PCIEX1_1`/`PCIEX1_2` IFD strap switcher ([`scripts/switch-m2-ifd.py`](scripts/switch-m2-ifd.py)), `NCT6791D` `lm-sensors` profile ([`configs/asus-z97-a-sensors.conf`](configs/asus-z97-a-sensors.conf)), committed IFD/ME/GbE/VBT blobs ([`blobs/`](blobs/)), hardware/software flowcharts ([`docs/COREBOOT-HW-SW-FLOW.md`](docs/COREBOOT-HW-SW-FLOW.md)), stock `3503` reverse-engineering documentation ([`docs/`](docs/)), and reusable AI agent workflows ([`.agents/skills/`](.agents/skills/)) for the **ASUSTeK `Z97-A`** (`Rev 1.03B`, LGA1150 Haswell / Devil's Canyon, Intel `Z97` PCH `8086:8cc4`, Nuvoton `NCT6791D` Super I/O, `ENE MBE0-Z97-0121` EC, `DIGI+ ASP1252` VRM, Realtek `ALC892`, Intel `I218-V` GbE, Winbond `W25Q64FV` 8 MiB DIP-8 SPI flash).
+Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracking upstream Coreboot stable releases via [`.github/workflows/coreboot-release.yml`](.github/workflows/coreboot-release.yml)), Haswell & Lynx Point Z97 stock-parity chipset patches ([`patches/`](patches/)), two-variant release builder ([`scripts/build_release_roms.sh`](scripts/build_release_roms.sh): `with-me` & `without-me`), pre-OS UEFI diagnostic & SPI delta-flasher (`z97a_tool.efi`, [`tools/z97a_uefi_tool/`](tools/z97a_uefi_tool/)), `M.2` vs `PCIEX1_1`/`PCIEX1_2` IFD strap switcher ([`scripts/switch-m2-ifd.py`](scripts/switch-m2-ifd.py)), `NCT6791D` `lm-sensors` profile ([`configs/asus-z97-a-sensors.conf`](configs/asus-z97-a-sensors.conf)), committed IFD/ME/GbE/VBT blobs ([`blobs/`](blobs/)), hardware/software flowcharts ([`docs/COREBOOT-HW-SW-FLOW.md`](docs/COREBOOT-HW-SW-FLOW.md)), stock `3503` reverse-engineering documentation ([`docs/`](docs/)), and reusable AI agent workflows ([`.agents/skills/`](.agents/skills/)) for the **ASUSTeK `Z97-A`** (`Rev 1.03B`, LGA1150 Haswell / Devil's Canyon, Intel `Z97` PCH `8086:8cc4`, Nuvoton `NCT6791D` Super I/O, `ENE MBE0-Z97-0121` EC, `DIGI+ ASP1252` VRM, Realtek `ALC892`, Intel `I218-V` GbE, Winbond `W25Q64FV` 8 MiB DIP-8 SPI flash).
 
 ---
 
@@ -59,11 +59,11 @@ Open-source **Coreboot (`-z97a-v0.15`) + EDK2 `UefiPayloadPkg` + iPXE** motherbo
    git apply ../patches/0002-lynxpoint-z97a-dmi-sata-pcie-aspm.patch
    git -C 3rdparty/libgfxinit apply ../../../patches/0003-libgfxinit-z97a-port-limits.patch
    ```
-2. Build the Coreboot toolchain (`make crossgcc-i386 CPUS=$(nproc)`) and run [`scripts/build.sh`](scripts/build.sh):
+2. Build both complete `8 MiB` `.bin` images (`with-me` and `without-me`, reusing one EDK2+iPXE build):
    ```bash
-   RELEASE_TAG=v26.11.1 ./scripts/build.sh
+   RELEASE_TAG=v26.09 ./scripts/build_release_roms.sh
    ```
-   Output ROMs, BIOS-region slice (`0x180000..0x7fffff`), and layout files are exported to `outputs/` and structurally validated via `ifdtool`, `me_cleaner -c`, and `cbfstool`.
+   Or build a single variant with `VARIANT_NAME=with-me ./scripts/build.sh` (`with-me` or `without-me`). Automated builds also run on every push and on Coreboot's quarterly stable release cadence (`YY.03`/`06`/`09`/`12`) via [`.github/workflows/coreboot-release.yml`](.github/workflows/coreboot-release.yml), publishing ONLY the two verified 8 MiB `.bin` files.
 
 > **Optional `M.2` vs `PCIEX1_1`/`PCIEX1_2` Selection:** Because ASUS Z97-A `PCIEX1_1` (`RP8`), `PCIEX1_2` (`RP7`), and `M.2 Socket 3` (`x2`) share PCH `HSIO 9..12` through an `ASM1480` mux controlled by `PCHSTRP9`, use [`scripts/switch-m2-ifd.py`](scripts/switch-m2-ifd.py) (`pcie-x1` default vs `m2-x2`) before flashing IFD if you move from add-in `x1` cards to an `M.2` PCIe SSD.
 
@@ -74,7 +74,7 @@ Open-source **Coreboot (`-z97a-v0.15`) + EDK2 `UefiPayloadPkg` + iPXE** motherbo
 1. **Always keep your original ASUS SPI chip (or a full external backup) untouched** for instant physical recovery.
 2. **External SPI Programmer (`CH341A` + `W25Q64FV` QE=1 Requirement):**
    - When flashing a blank or external Winbond `W25Q64FV` DIP-8 chip, **always replace `blobs/gbe-z97-a.bin` (`0x001000..0x002fff`) with your own board's `FREG3` GbE region** so you keep your motherboard's unique LAN MAC address.
-   - ASUS Z97-A requires **non-volatile Quad Enable (`SR1=0x00`, `SR2=0x02`, `QE=1`)** on `W25Q64FV` or the board will not POST even if flash verification passes. Run [`scripts/ch341a-w25q64-qe.py`](scripts/ch341a-w25q64-qe.py) after `flashrom -p ch341a_spi -w <full.rom> -v <full.rom>`.
+   - ASUS Z97-A requires **non-volatile Quad Enable (`SR1=0x00`, `SR2=0x02`, `QE=1`)** on `W25Q64FV` or the board will not POST even if flash verification passes. Because `QE=1` lives in a silicon status register outside the `.bin` image, flash blank chips with [`scripts/flash-ch341a.sh`](scripts/flash-ch341a.sh) (`flashrom -p ch341a_spi -w <file>.bin -v <file>.bin` + `python3 scripts/ch341a-w25q64-qe.py --set-qe`) in one step.
 3. **Updating Once Coreboot is Running (Internal `flashrom` or UEFI `z97a_tool.efi`):**
    - Coreboot's FMAP places `RW_MRC_CACHE` at `0x180000..0x18ffff`, `SMMSTORE` at `0x190000..0x20ffff`, `FMAP` at `0x210000..0x210fff`, and `COREBOOT` at `0x211000..0x7fffff`.
    - Write **only** `0x00211000:0x007fffff coreboot` (`flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" -l layout.txt -i coreboot -w <full.rom> --noverify-all`) or use [`tools/z97a_uefi_tool/z97a_tool.c`](tools/z97a_uefi_tool/z97a_tool.c) so `IFD`, `GbE`, `ME`, `QE=1`, `RW_MRC_CACHE`, and `SMMSTORE` remain intact.
