@@ -486,8 +486,14 @@ static void nct6791d_apply_fan_profile(u8 bank, u8 temp_src, unsigned int profil
 		hwm_write(bank, 0x27 + i, curve->pwm[i]);
 	}
 
-	val = hwm_read(bank, 0x02);
-	hwm_write(bank, 0x02, (val & 0x0f) | 0x40);
+	/* Match QFanDXE SmartFan IV critical limits, step times, and count step */
+	hwm_write(bank, 0x35, curve->temp[3] + 5);
+	hwm_write(bank, 0x38, 0x02);
+	hwm_write(bank, 0x3f, hwm_read(bank, 0x3f) & 0xf8);
+	hwm_write(bank, 0x03, 0x01);
+	hwm_write(bank, 0x04, 0x01);
+	hwm_write(bank, 0x66, 0x11);
+	hwm_write(bank, 0x02, 0x40);
 }
 
 static const char *qfan_profile_name(unsigned int profile)
@@ -538,12 +544,25 @@ static void z97a_post_device(void *arg)
 	sio_exit();
 
 	/*
-	 * Initialize NCT6791D HWM Bank 7 TjMax matching SIOBasicIOPei (0xfff80c78),
+	 * Initialize NCT6791D HWM Bank 7 TjMax & PECI monitoring matching SIOBasicIOPei (0xfff80c78),
 	 * apply Q-Fan SmartFan IV curves, then select Bank 0 for OS nct6775.
 	 */
 	hwm_write(0x07, 0x03, 0x10);
-	hwm_write(0x07, 0x09, tjmax);
+	hwm_write(0x07, 0x09, (hwm_read(0x07, 0x09) & 0x80) | (tjmax & 0x7f));
 	hwm_write(0x07, 0x01, 0x95);
+	hwm_write(0x00, 0x5d, (hwm_read(0x00, 0x5d) & ~0x06) | 0x01);
+	hwm_write(0x00, 0x5e, hwm_read(0x00, 0x5e) & 0xf0);
+	hwm_write(0x04, 0xf8, 0x50);
+	hwm_write(0x04, 0xfa, 0x51);
+	hwm_write(0x00, 0xae, 0x03); /* Enable PECI0/1 for SMIOVT & SmartFan */
+	/* Sane SYSTIN alarm limits (default 0C triggers false alarm) & clear latched CASEOPEN0/1 */
+	hwm_write(0x00, 0x39, 65);
+	hwm_write(0x00, 0x3a, 60);
+	hwm_write(0x00, 0x46, hwm_read(0x00, 0x46) | 0xc0);
+	/* Ensure PWM duty mode (not DC / RPM closed-loop), matching QFanDXE */
+	hwm_write(0x00, 0x04, hwm_read(0x00, 0x04) & ~0x01);
+	hwm_write(0x06, 0x00, 0x00);
+	hwm_write(0x06, 0x01, hwm_read(0x06, 0x01) & 0xf0);
 
 	nct6791d_apply_fan_profile(0x02, 0x10, cpu_prof, true);
 	for (size_t i = 0; i < ARRAY_SIZE(chassis_banks); i++)

@@ -80,7 +80,7 @@ Logical PCH slot & storage sharing on the Z97-A:
 
 ## 3. Enabled Performance, Virtualization & Stability Features
 
-| Feature | Implementation in Z97-A Coreboot Build (`v0.16` / `v26.09-r2`) | Verification on Linux / Proxmox |
+| Feature | Implementation in Z97-A Coreboot Build (`v0.17` / `v26.09-r3`) | Verification on Linux / Proxmox |
 | :--- | :--- | :--- |
 | **True 64-bit Above-4G MMIO (`QWordMemory`)** | Patched `src/northbridge/intel/haswell/northbridge.c` + `acpi/hostbridge.asl` (`PM64` window from `TOUUD` to `1 << 39` = `512 GiB` CPU PA) + `CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION=y` + `CONFIG_PCIEXP_HOTPLUG_PREFETCH_MEM_ABOVE_4G=y` | `dmesg \| grep "root bus resource"` shows `[mem 0x87ae00000-0x7fffffffff window]` |
 | **Resizable BAR (ReBar up to 32 GiB)** | `CONFIG_PCIEXP_SUPPORT_RESIZABLE_BARS=y`, `CONFIG_PCIEXP_DEFAULT_MAX_RESIZABLE_BAR_BITS=35` (`32 GiB` max BAR), EDK2 `PcdPcieResizableBarSupport=TRUE` (wired via `payloads/external/edk2/Makefile`) | `lspci -vv` shows `Physical Resizable BAR` resized cleanly above `4 GiB` |
@@ -133,4 +133,4 @@ Live verification on Proxmox VE 9 (`-z97a-v0.15`, kernel `7.0.14-17-pve`, direct
   - Coreboot `v0.15` disables `CONFIG_PCIEXP_ASPM`, `CONFIG_PCIEXP_CLK_PM`, and `CONFIG_PCIEXP_L1_SUB_STATE` for `BOARD_ASUS_Z97_A` (matching ASUS factory BIOS defaults on manual p. 95–96).
   - **Live `Coreboot v0.15` Result**: `ata5: SATA link up 6.0 Gbps (SStatus 133 SControl 300)`, `dd if=/dev/sda` = **`451 MB/s`** (up from `140 MB/s` Gen1), **`0` resets over 120s**, `00:1c.2` & `05:00.0` show `ASPM Disabled`, `CommClk+`, `LnkSta 5GT/s x1`, `DevSta CorrErr-`, `CESta/UESta` all `-`, and `enp5s0` up at **`2500Mb/s` Full**.
 - **Sensors, Display, Audio, EPU/TPU & IOMMU**:
-  - `nct6775` (`nct6791-isa-0290`, persisted via `/etc/modules-load.d/nct6775.conf`), `coretemp-isa-0000`, and `intel-rapl:0` (`PL1=88W`, `PL2=110W`) all live; `card1-HDMI-A-3` active on `AOC 28E850` (`1920x1080`); `ALC892` (`0x11=0x90460130`), `15` IOMMU groups + `/dev/kvm`, `ENE EC MBE0-Z97-0121`, `EPU=OFF`, `TPU=OFF`, `microcode 0x28`, `32 GiB` RAM, and unlocked `flashrom` (`BIOS_CNTL=0x09`, `FREG0..3` read-write).
+  - `nct6775` (`nct6791-isa-0290`, `/etc/modules-load.d/nct6775.conf` + `configs/asus-z97-a-sensors.conf` in `/etc/sensors.d/asus-z97-a.conf`), `coretemp-isa-0000`, and `intel-rapl:0` (`PL1=88W`, `PL2=110W`) all live with **`0` alarms** (`VCCIN 1.79V`, `+5V 5.08V`, `+12V 12.29V`, `PECI Agent 0` tracking CPU load, `CPU_FAN` SmartFan IV `29% -> 100%` / `509 -> 1518 RPM`); `card1-HDMI-A-3` active on `AOC 28E850` (`1920x1080`); `ALC892` (`0x11=0x90460130`), `14` IOMMU groups + `/dev/kvm`, `ENE EC MBE0-Z97-0121`, `EPU=OFF`, `TPU=OFF`, `microcode 0x28`, `32 GiB` RAM, and unlocked `flashrom` (`BIOS_CNTL=0x09`, `FREG0..3` read-write).

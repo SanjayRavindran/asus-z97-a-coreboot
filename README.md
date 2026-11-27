@@ -1,6 +1,6 @@
 # ASUS Z97-A — Coreboot + EDK2 UEFI + iPXE Port
 
-![Release](https://img.shields.io/badge/Release-v26.09--r2-2ea44f?style=flat-square)
+![Release](https://img.shields.io/badge/Release-v26.09--r3-2ea44f?style=flat-square)
 ![Coreboot](https://img.shields.io/badge/Coreboot-26.09%20%7C%20df45ea2c49b4-0066cc?style=flat-square)
 ![Payload](https://img.shields.io/badge/Payload-EDK2%20UefiPayloadPkg%20%2B%20iPXE-5c2d91?style=flat-square)
 ![Flash](https://img.shields.io/badge/SPI%20Flash-W25Q64FV%20(8M)-d97706?style=flat-square)
@@ -11,7 +11,7 @@
 [**Releases**](../../releases) ·
 [**Hardware-to-Software Map (5 Flowcharts)**](docs/HARDWARE-TO-SOFTWARE-MAP.md) ·
 [**Boot & Flex-I/O Flowcharts**](docs/COREBOOT-HW-SW-FLOW.md) ·
-[**Parity & Live Report (`v0.16`)**](docs/COREBOOT-VS-STOCK-PARITY-REPORT.md) ·
+[**Parity & Live Report (`v0.17`)**](docs/COREBOOT-VS-STOCK-PARITY-REPORT.md) ·
 [**Hardware, PCIe & Flex-I/O Map**](docs/Z97-A-HARDWARE-AND-PCIE.md) ·
 [**Stock ROM (`3503`) Audit**](docs/STOCK-ROM-FEATURES-AUDIT.md) ·
 [**DIGI+ VRM, TPU & EPU**](docs/DIGI-VRM-TPU-EPU-ALGORITHMS.md) ·
@@ -23,7 +23,7 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
 
 ---
 
-## Highlights (`v26.11.1` / `Coreboot v0.15`)
+## Highlights (`v26.09-r3` / `Coreboot v0.17`)
 
 - **Full Stock Silicon & Board Parity**:
   - **76 / 76 PCH GPIOs**, **14 / 14 `ALC892` audio pin verbs** (`NID 0x11=0x90460130`), **`PAVPC=0x84100017` / `TOLUD=0x84200001`**, **DMI `-6.0 dB` Gen2 x4**, **Desktop PCH Clock Gating (`PMCON1=0x0210`)**, and **6-port HSIO SATA Gen3 `DTLE=0x02`** matched 1:1 against stock AMI `3503` (`PEI`/`DXE`) and live hardware telemetry.
@@ -42,7 +42,7 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
 
 | Component / Blob | Version / Revision | Status |
 |---|---|---|
-| **Coreboot / CI Cadence** | Live `v0.16` (`df45ea2c49b4`) / CI `26.09` (`YY.03/06/09/12`) | **Latest** |
+| **Coreboot / CI Cadence** | Live `v0.17` (`df45ea2c49b4`) / CI `26.09` (`YY.03/06/09/12`) | **Latest** |
 | **EDK2 `UefiPayloadPkg`** | MrChromebox `f248a68be3` (`2026-11-14`) | **Latest** |
 | **iPXE** | `21f9cda4d` (`master`, pulled fresh in every CI run) | **Latest** |
 | **CPU Microcode (`0x306c3` / `0x40661` / `0x40671`)** | `rev 0x28` / `0x1c` / `0x22` (`intel-microcode` `bdc92ab`) | **Latest / Final** |
@@ -55,14 +55,14 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
 
 ## Verified Hardware Telemetry (`192.168.1.150` Live Proxmox VE 9)
 
-| Subsystem | Live Verification (`-z97a-v0.16-with-me`, kernel `7.0.14-17-pve`) |
+| Subsystem | Live Verification (`-z97a-v0.17-with-me`, kernel `7.0.14-17-pve`) |
 |---|---|
 | **CPU / Microcode / Memory** | `Intel i7-4790K @ 4.00GHz` (`4.2–4.4 GHz` Turbo `0x2a2b2c2c`), microcode `0x28`, `32 GiB` DDR3-1866 (`4x 8 GiB` dual-channel), `MSR 0x3a = 0x5` (`VMX` locked ON) |
 | **SATA Storage (`ata5`, `SATA6G_5`)** | `CT500BX500SSD1`: **`6.0 Gbps` (`SStatus 133`)**, `dd`: **`451 MB/s`**, **0 resets**, SMART `Reallocated = 0`, `UDMA_CRC` no new errors |
 | **PCIe, Above-4G & Networking** | `[mem 0x87ae00000-0x7fffffffff]` 64-bit Above-4G window; `00:1c.2 -> 05:00.0` (`I226-V`, `enp5s0`): **`2500Mb/s` Full**, `LnkSta 5GT/s x1`, `ASPM Disabled`, `CommClk+`, `Wake-on: g`; `00:19.0` (`I218-V`): MAC `9c:5c:8e:90:7e:f2`, `Wake-on: g`; `00:16.0` (`MEI #1`): **hidden** |
 | **Power & Wake-on-LAN (`ACPI`)** | `GEN_PMCON_3 = 0x3808` (`AFTERG3_EN=0` **Power ON after AC loss**, `WOL_EN_OVRD=1`); `/proc/acpi/wakeup`: `GLAN` (`S4 *enabled`), `PEGP` (`S4 *enabled`), `RP01..RP08` (`RP03 *enabled`), `XHCI` (`S3 *enabled`) |
 | **Display & Audio** | `card1-HDMI-A-3` connected (`AOC 28E850`, `1920x1080`, `dpms=On`); `Realtek ALC892` (`1043:860b`, `NID 0x11=0x90460130`) + Haswell HDMI audio |
-| **Sensors, RAPL & EC** | `nct6791-isa-0290` (`Vcore=888 mV`, `+3.3V=3.38V`, `3VSB=3.42V`, `Vbat=3.28V`, `fan2=873 RPM`, `SYSTIN=+32°C`); `coretemp` `Pkg +44°C`; `intel-rapl` `PL1=88W`/`PL2=110W`; `ENE EC: MBE0-Z97-0121` |
+| **Sensors, Fan Control & EC** | `nct6791-isa-0290` (**`0` alarms**): `VCCIN=1.79V`, `+5V=5.08V`, `AVCC/+3.3V=3.38V`, `+12V=12.29V`, `3VSB=3.41V`, `Vbat=3.28V`, `SYSTIN=+32°C`, `CPUTIN=+36.5°C`, `AUXTIN2=+36°C`, **`PECI0=+34.5°C`**, SmartFan IV **`29% -> 100%` (`509 -> 1518 RPM`)**; `coretemp` `Pkg +42°C`; `intel-rapl` `PL1=88W`/`PL2=110W`; `ENE EC: MBE0-Z97-0121` |
 | **Serial, USB, IOMMU & SPI** | `ttyS0` `0x03f8` IRQ `4` (`115200 8N1`); `14` USB2 + `6` USB3 (`xhci_hcd`); `14` IOMMU groups (`DMAR` + `/dev/kvm`); `dmesg -l err,crit,alert,emerg`: **0 errors** |
 
 ---
@@ -127,8 +127,8 @@ flowchart LR
 
 | File | Contents |
 |---|---|
-| [**`docs/HARDWARE-TO-SOFTWARE-MAP.md`**](docs/HARDWARE-TO-SOFTWARE-MAP.md) | **5 Mermaid flowcharts** + Master Hardware-to-Software Mapping Table (`v0.16` / `v26.09-r2`: physical buses/ICs -> Coreboot patches -> ACPI/EDK2 -> Linux drivers) |
-| [**`docs/COREBOOT-HW-SW-FLOW.md`**](docs/COREBOOT-HW-SW-FLOW.md) | Software boot flow, Flex-I/O `HSIO 1..18` interconnect, OS sensor/EPU/TPU/WoL flowcharts + verified `v0.16` metrics |
+| [**`docs/HARDWARE-TO-SOFTWARE-MAP.md`**](docs/HARDWARE-TO-SOFTWARE-MAP.md) | **5 Mermaid flowcharts** + Master Hardware-to-Software Mapping Table (`v0.17` / `v26.09-r3`: physical buses/ICs -> Coreboot patches -> ACPI/EDK2 -> Linux drivers) |
+| [**`docs/COREBOOT-HW-SW-FLOW.md`**](docs/COREBOOT-HW-SW-FLOW.md) | Software boot flow, Flex-I/O `HSIO 1..18` interconnect, OS sensor/EPU/TPU/WoL flowcharts + verified `v0.17` metrics |
 | [**`docs/COREBOOT-VS-STOCK-PARITY-REPORT.md`**](docs/COREBOOT-VS-STOCK-PARITY-REPORT.md) | Complete SPI, silicon, PCIe, SATA, audio, display, WoL, Above-4G, ME, and `192.168.1.150` live hardware parity report |
 | [**`docs/Z97-A-HARDWARE-AND-PCIE.md`**](docs/Z97-A-HARDWARE-AND-PCIE.md) | Onboard IC inventory, Flex-I/O `M.2`/`PCIEX1_1`/`PCIEX1_2`/`SATA Express` muxing, Haswell `CFG[6:5]` PEG bifurcation, Above-4G / ReBar / SR-IOV / IOMMU |
 | [**`docs/STOCK-ROM-FEATURES-AUDIT.md`**](docs/STOCK-ROM-FEATURES-AUDIT.md) | Reverse-engineered `ENE EC` (`MBE0-Z97-0121`), `PcieLaneDXE`, `Q-LEDs`, `EPU`/`TPU`/`DirectKey`, `Q-Fan` banks, `ErP S4/S5`, and `DIGI+ ASP1252` |

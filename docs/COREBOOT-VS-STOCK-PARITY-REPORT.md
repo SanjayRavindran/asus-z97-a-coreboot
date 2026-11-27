@@ -1,9 +1,9 @@
-# ASUS Z97-A Coreboot (`v0.16` / `v26.09-r2`) vs. Stock AMI `3503` Parity Report
+# ASUS Z97-A Coreboot (`v0.17` / `v26.09-r3`) vs. Stock AMI `3503` Parity Report
 
-**Release Variant 1 (`with-me`):** `asus-z97-a-coreboot-v26.09-r2-with-me.bin` (`8,388,608` B — Stock ME `9.1.25.1005` + `00:16.0` `MEI #1` hidden via `FD2` + unlocked IFD)  
-**Release Variant 2 (`without-me`):** `asus-z97-a-coreboot-v26.09-r2-without-me.bin` (`8,388,608` B — Minimal `116 KiB` `ROMP+BUP` ME `118,784` B + `AltMeDisable=1` + `00:16.0` hidden + unlocked IFD)  
+**Release Variant 1 (`with-me`):** `asus-z97-a-coreboot-v26.09-r3-with-me.bin` (`8,388,608` B — Stock ME `9.1.25.1005` + `00:16.0` `MEI #1` hidden via `FD2` + unlocked IFD)  
+**Release Variant 2 (`without-me`):** `asus-z97-a-coreboot-v26.09-r3-without-me.bin` (`8,388,608` B — Minimal `116 KiB` `ROMP+BUP` ME `118,784` B + `AltMeDisable=1` + `00:16.0` hidden + unlocked IFD)  
 **Stock Reference Image:** Stock AMI Aptio IV `3503` (`8,388,608` B, SHA-256 `a1fd7f2974dff0614ad9f7f63784db4bc9cfbb62e0779ad42e76f49589e2cab1`)  
-**Live Verified Host:** ASUS `Z97-A` `Rev 1.03B`, Intel `i7-4790K`, `32 GiB` DDR3-1866, `CT500BX500SSD1` (`SATA6G_5` / `ata5`), `I218-V` + `I226-V` 2.5GbE, `AOC 28E850` HDMI (`Proxmox VE 9`, Linux `7.0.14-17-pve`, `-z97a-v0.16-with-me`)
+**Live Verified Host:** ASUS `Z97-A` `Rev 1.03B`, Intel `i7-4790K`, `32 GiB` DDR3-1866, `CT500BX500SSD1` (`SATA6G_5` / `ata5`), `I218-V` + `I226-V` 2.5GbE, `AOC 28E850` HDMI (`Proxmox VE 9`, Linux `7.0.14-17-pve`, `-z97a-v0.17-with-me`)
 
 ---
 
@@ -25,12 +25,12 @@
 
 ## 2. Silicon, GPIO, Super I/O, Audio, PCIe, Display & Power Parity
 
-| Subsystem | Stock Reference | Coreboot `v0.16` Implementation | Live Verification (`192.168.1.150`) |
+| Subsystem | Stock Reference | Coreboot `v0.17` Implementation | Live Verification (`192.168.1.150`) |
 |---|---|---|---|
 | **CPU Microcode (`0x306c3`)** | Stock `rev 0x24` | `rev 0x28` (`2019-11-12`) + `ENABLE_VMX=y` | `microcode 0x28`, `MSR 0x3a = 0x5` (`Lock=1, VMX_outside_SMX=1`), `/dev/kvm` |
 | **Memory (`32 GiB` DDR3-1866)** | 4x8 GiB dual-channel | `USE_NATIVE_RAMINIT=y` (`0x50..0x53`), `PAVPC=0x84100017`, `TOLUD=0x84200001` | `31Gi` RAM, `[mem 0x87ae00000-0x7fffffffff]` 64-bit Above-4G window |
 | **PCH GPIOs (`GPIO0..75`)** | `inteltool` `GPIOBASE` | [`gpio.c`](../board/src/mainboard/asus/z97-a/gpio.c) (`76` pins, `GPI_INV=0x6045`) | **0 diffs across all 76 pins** |
-| **Super I/O (`NCT6791D` `0x2e`)** | `superiotool` + `SIOBasicIOPei` | [`bootblock.c`](../board/src/mainboard/asus/z97-a/bootblock.c) + [`devicetree.cb`](../board/src/mainboard/asus/z97-a/devicetree.cb) | `CR 0x28=0x00` unlocks HWM `0x290` (`nct6775`: `fan2=873 RPM`, `SYSTIN +32°C`) |
+| **Super I/O (`NCT6791D` `0x2e`)** | `superiotool` + `SIOBasicIOPei` + `QFanDXE` | [`bootblock.c`](../board/src/mainboard/asus/z97-a/bootblock.c) + [`mainboard.c`](../board/src/mainboard/asus/z97-a/mainboard.c) (`0xae=0x03`, `4f8/4fa`, `5d/5e` thermistor, `0x66=0x11`, `0x35` crit, `0x39=65/0x3a=60`, `0x46\|=0xc0`, `0x02=0x40`, PWM mode) + [`asus-z97-a-sensors.conf`](../configs/asus-z97-a-sensors.conf) | `CR 0x28=0x00` unlocks `@0x290`; **`0` alarms** (`VCCIN 1.79V`, `+5V 5.08V`, `+12V 12.29V`, `SYSTIN +32°C`, `CPUTIN +36.5°C`, **`PECI0 +34.5°C`**, SmartFan IV **`29% -> 100%` / `509 -> 1518 RPM`**) |
 | **`COM1` Serial Console** | `LDN 0x02` `0x03f8`, IRQ `4` | Coreboot + EDK2 + iPXE `115200 8N1` | Verified across `ttyS0` `0x03f8` IRQ `4` |
 | **Realtek `ALC892` Audio** | `SBPEI` + `codec#0` | [`hda_verb.c`](../board/src/mainboard/asus/z97-a/hda_verb.c) (`0x10ec0892`, subid `0x1043860b`) | **14 / 14 pin configs match 1:1** (`NID 0x11=0x90460130`) |
 | **Intel `HD 4600` & `data.vbt`** | `i915_vbt.bin` (`6,144` B) | Identical `blobs/data.vbt` (`ada53b3d...`) in CBFS `vbt.bin` + IGD OpRegion + 5 `libgfxinit` ports (`HDMI1`, `DP2`, `HDMI2`, `HDMI3`, `Analog`) + `CDCLK=0x21b` (`539` MHz) | `card1-HDMI-A-3` connected (`AOC 28E850`, `3840x2160`/`1920x1080`) + `00:03.0` HDMI audio |
@@ -52,9 +52,9 @@
 
 ---
 
-## 4. Live Verification Matrix (`Coreboot v0.16` on `192.168.1.150`)
+## 4. Live Verification Matrix (`Coreboot v0.17` on `192.168.1.150`)
 
-| Device / BDF | Subsystem | Live Status (`-z97a-v0.16-with-me`) |
+| Device / BDF | Subsystem | Live Status (`-z97a-v0.17-with-me`) |
 |---|---|---|
 | `00:00.0` | Haswell Host Bridge (`8086:0c00`) | Healthy (`PAVPC=0x84100017`, `TOLUD=0x84200001`, `[mem 0x87ae00000-0x7fffffffff]`, `DMAR` `14` IOMMU groups) |
 | `00:01.0` | PEG10 x16 (`8086:0c01`) | Healthy (`PEGP S4 *enabled` in `/proc/acpi/wakeup`, `ASPM Disabled`) |

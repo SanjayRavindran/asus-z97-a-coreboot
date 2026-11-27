@@ -35,7 +35,10 @@ Operational reference derived from reverse-engineering the stock AMI `3503` ROM 
 ## 3. Q-LEDs, Q-Fan, LPC Port `80h` & iPXE Netboot
 
 - **Q-LED Progression**: `DRAM_LED` (`NCT6791D LDN 0x08 GP07`) pre-RAM -> `VGA_LED` (PCH `GPIO38`) -> `BOOT_DEVICE_LED` (PCH `GPIO22`) -> all OFF at `BS_PAYLOAD_BOOT` (toggle via `qled_post_indicators`).
-- **Q-Fan (`NCT6791D` HWM `@0x290`)**: `CR 0x28=0x00` unlocks I/O; Bank 7 `TjMax` calibrated; SmartFan IV curves on Bank 2 (`CPU_FAN`, PECI) and Banks `1/3/8/9` (`CHA_FAN1..4`, SYSTIN).
+- **Q-Fan & PECI HWM (`NCT6791D` HWM `@0x290`, `SIOBasicIOPei` + `QFanDXE` parity in `mainboard.c`)**:
+  - `CR 0x28=0x00` unlocks `@0x290` I/O; `Bank 7` (`0x03=0x10`, `0x09=TjMax`, `0x01=0x95`), `Bank 4` (`0xf8=0x50`, `0xfa=0x51`), and **`Bank 0 0xae=0x03`** (`EN_PECI0/1` — required for `PECI Agent 0` `temp7` and CPU SmartFan IV!).
+  - **`Bank 0 0x5d=(val & ~0x06)|0x01`** (`EN_VBAT_MNT` + Thermistor mode for `SYSTIN`/`CPUTIN`) + `Bank 0 0x5e &= 0xf0` (disables spurious Current Mode), `Bank 0 0x39=65` / `0x3a=60` (`SYSTIN` high/hyst), `Bank 0 0x46 |= 0xc0` (clear `CASEOPEN0/1`), `Bank 0 0x04 &= ~0x01` + `Bank 6 0x00=0x00` / `0x01 &= 0xf0` (PWM duty mode).
+  - SmartFan IV curves on Bank `2` (`CPU_FAN`, PECI `0x10`) and Banks `1/3/8/9` (`CHA_FAN1..4`, SYSTIN `0x01`) MUST write **`0x66=0x11`** (`FAN COUNT STEP`, reset default `0x00` freezes PWM!), `0x03=0x01`, `0x04=0x01`, `0x35=T4+5` (Critical Temp above `T4`), `0x38=0x02`, `0x3f &= 0xf8`, and `0x02=0x40`.
 - **LPC Port `80h` + `CMOS_POST`**: `RCBA32(GCS)` (`0x3410`) bit 2 cleared (`RPR=0`) routes `0x80` to the `TPM` LPC header; `CONFIG_CMOS_POST=y` (`0x70`) preserves last boot POST codes. Leave `NCT6791D LDN 0x14` off.
 - **iPXE UEFI Netboot & UEFI Shell**: Built natively into EDK2 (`NETWORK_IPXE=TRUE`, `B68653C7-EEA1-4435-A199-A44F59E4476C`) with HTTPS, TRUST, `COM1` support (`I218-V` `8086:15a1` + `I226-V` `8086:125c`), and interactive `UEFI Shell` (supersedes legacy `coreinfo`).
 

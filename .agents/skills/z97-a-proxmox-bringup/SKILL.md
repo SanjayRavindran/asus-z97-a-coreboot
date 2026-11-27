@@ -46,7 +46,7 @@ Run over SSH (`192.168.1.150`) or `COM1` after booting Coreboot:
 1. `dmidecode -t bios -t baseboard` & `cat /sys/firmware/efi/fw_platform_size` -> verify `Vendor: coreboot`, `64`-bit UEFI, and 8 MiB ROM.
 2. **Coreboot Serial Log (`COM1`)**: confirm `RCBA GCS` shows `LPC` Port `80h` routing, `CMOS_POST`, `ENE EC version: MBE0-Z97-0121`, `ASP1252` telemetry (`VCPU`/`ICPU`/`PCPU`), `EPU`/`TPU` HW switches, Q-LED transitions, `libgfxinit` linear FB -> UEFI GOP, and EDK2 `iPXE Network Boot` entry for `I218-V`/`I226-V`.
 3. `ip -br link` & `ethtool` -> confirm `enp5s0`/`vmbr0` up at `2500Mb/s`, `eno0` retains MAC `9c:5c:8e:90:7e:f2`, and both show `Wake-on: g`.
-4. **`v0.16` Virtualization, ME, Above-4G, Power-ON & WoL Checks**:
+4. **`v0.17` Virtualization, ME, Above-4G, Power-ON & WoL Checks**:
    - `lspci -nn -s 00:16.0` -> **empty** (`MEI #1` hidden by default via `FD2`).
    - `setpci -s 00:1f.0 a4.w` -> **`3808`** (`AFTERG3_EN=0` Power ON after AC loss + `WOL_EN_OVRD=1` WoL enabled).
    - `cat /proc/acpi/wakeup` -> exposes **`GLAN` (`S4 *enabled`)**, **`PEGP` (`S4 *enabled`)**, **`RP01..RP08` (`RP03 *enabled`)**, and **`XHCI` (`S3 *enabled`)**.
@@ -57,4 +57,4 @@ Run over SSH (`192.168.1.150`) or `COM1` after booting Coreboot:
 6. **DMI, Desktop Clock Gating & RCBA Parity**: verify live `DMIBAR` (`0088=00420000`, `0098=00000002`, `01d0=00000000`), `00:1f.0` `a0=0210/0610`, and `RCBA` (`21a8=40420000`, `2234=0`, `341c=0`, `38c0=8`).
 7. **HDMI Output Verification**: Check `/sys/class/drm/card*-HDMI-*/{status,enabled,modes,edid}` for live connected monitor (`AOC 28E850` on `card1-HDMI-A-3`). Only use `192.168.1.90:/dev/video0` (`z97a_hdmi_grab.py`) when the USB HDMI capture card is explicitly connected instead of a physical monitor.
 8. `grep . /sys/bus/pnp/devices/*/id` & `cat /proc/tty/driver/serial | head -n 3` -> confirm `PNP0501` and `ttyS0` at `0x03f8` IRQ `4`.
-9. `sensors` -> verify `coretemp-isa-0000`, `intel-rapl:0`, and `nct6791-isa-0290` (persisted via `/etc/modules-load.d/nct6775.conf`, unlocked via `CR 0x28=0x00`) temperatures, voltages, and `fan2`/`PWM` telemetry.
+9. `sensors` -> verify `coretemp-isa-0000`, `intel-rapl:0`, and `nct6791-isa-0290` (persisted via `/etc/modules-load.d/nct6775.conf` and `/etc/sensors.d/asus-z97-a.conf` from `configs/asus-z97-a-sensors.conf`) show **0 `ALARM`s**, scaled `VCCIN` (`*2`), `+5V` (`*5`), `+12V` (`*12`), live `PECI Agent 0` (`temp7`, enabled by `Bank 0 0xae=0x03`), `CPUTIN` (`temp2`), `SYSTIN` (`temp1`), `AUXTIN2` (`temp5`), fixed `pwm1..5` percentages (`lm-sensors 3.6.2-2` `* 2 / 2.55`), and dynamic `CPU_FAN` (`fan2`/`pwm2`) ramp under CPU load.
