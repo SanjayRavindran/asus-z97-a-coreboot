@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Build ONLY the 2 complete, ready-to-flash 8 MiB ASUS Z97-A ROM binaries:
-#   1. asus-z97-a-coreboot-<RELEASE_TAG>-with-me.bin    (Stock ME 9.1.25.1005 + unlocked IFD)
-#   2. asus-z97-a-coreboot-<RELEASE_TAG>-without-me.bin (Neutralized ME + AltMeDisable=1 + unlocked IFD)
+#   1. asus-z97-a-coreboot-<RELEASE_TAG>-with-me.bin    (Stock ME 9.1.25.1005 + MEI hidden via FD2 + unlocked IFD)
+#   2. asus-z97-a-coreboot-<RELEASE_TAG>-without-me.bin (Minimal 116 KiB ROMP+BUP ME + AltMeDisable=1 + MEI hidden + unlocked IFD)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="${ROOT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"

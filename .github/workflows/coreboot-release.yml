@@ -147,11 +147,17 @@ jobs:
           ### Release Binaries (Complete 8 MiB SPI Images)
           | File | Size | ME Configuration | SHA-256 |
           |---|---:|---|---|
-          | `asus-z97-a-coreboot-{tag}-with-me.bin` | `8,388,608` B (`8 MiB`) | Stock Intel ME `9.1.25.1005` + Unlocked IFD (`FLMSTR1=0xffff0000`) | `{sha_w}` |
-          | `asus-z97-a-coreboot-{tag}-without-me.bin` | `8,388,608` B (`8 MiB`) | Neutralized ME (`me_cleaner -S`, RSA-valid `FTPR` kept to avoid 30-min shutdown timer) + `AltMeDisable=1` + Unlocked IFD | `{sha_wo}` |
+          | `asus-z97-a-coreboot-{tag}-with-me.bin` | `8,388,608` B (`8 MiB`) | Stock Intel ME `9.1.25.1005` (`MEI #1` `00:16.0` hidden via `FD2`) + Unlocked IFD (`FLMSTR1=0xffff0000`, `BIOS@0x180000`) | `{sha_w}` |
+          | `asus-z97-a-coreboot-{tag}-without-me.bin` | `8,388,608` B (`8 MiB`) | Minimal `116 KiB` ME (`me_cleaner -S -r -t`: `ROMP`+`BUP`, RSA-valid `FTPR` kept to avoid 30-min shutdown timer) + `AltMeDisable=1` + `MEI #1` hidden + Unlocked IFD (`BIOS@0x020000`, `+1.375 MiB` free BIOS flash region) | `{sha_wo}` |
+
+          ### Default Enabled Platform Features
+          - **Virtualization & PCIe:** VT-x (`VMX`/`EPT`/`VPID` unlocked-disabled/enabled locked cleanly), VT-d IOMMU (`DMAR` + IRQ remapping), `ALWAYS_ALLOW_ABOVE_4G_ALLOCATION=y`, Resizable BAR (up to `32 GiB`, Coreboot + EDK2 `PcdPcieResizableBarSupport=TRUE`), SR-IOV + ARI, `PCIEXP_ASPM=n`.
+          - **Power & Remote Management:** Restore AC Power Loss = **Power ON (`S0`)** (`AFTERG3_EN=0`), **Wake-on-LAN (`S3/S4/S5`)** enabled (`GEN_PMCON_3 WOL_EN_OVRD=1`, ACPI `_PRW` on `GLAN` `00:19.0`, `PEG0..2`, `RP01..08`, S5 GPE preservation), Intel ME `00:16.0` disabled/hidden by default.
+          - **Display (`libgfxinit` + Stock VBT) & Setup:** Full stock `3503` `i915_vbt.bin` (`vbt.bin` SHA-256 `ada53b3d...`) embedded in CBFS & ACPI IGD OpRegion + all 5 ports (`HDMI1`/`DP2`/`HDMI2`/`HDMI3`/`Analog`), UEFI CFR Setup (`ESC`) + UEFI Shell + `iPXE`.
 
           ### Direct SPI Chip Flashing & `QE=1` Note
           - Both `.bin` files include the full ASUS Z97-A descriptor (`FLCOMP=0x64900044`, `VSCC` `W25Q64`/`GD25Q64`, `PCHSTRP9=0xf0544a85`, `PCHSTRP18=0x00000003`), `GbE`, `ME`, `RW_MRC_CACHE`, `SMMSTORE`, and `COREBOOT` (`EDK2` + `iPXE`, `PCIEXP_ASPM=n`).
+          - **NOTE when switching between `with-me` (`BIOS@0x180000`) and `without-me` (`BIOS@0x020000`):** These two variants use different `IFD` (`FREG1`/`FREG2`) layouts. Always flash `without-me` externally via `CH341A` (NEVER overwrite `IFD` or `ME` internally with `flashrom -p internal`).
           - **Winbond `W25Q64FV` Quad Enable (`QE=1`) Hardware Note:** `QE=1` lives in non-volatile Status Register 2 (`SR2=0x02`) outside the 8 MiB flash array. Chips pulled from an ASUS Z97-A (or `W25Q64JV-IQ`) already have `QE=1` latched and boot directly after `flashrom -w <file>.bin -v <file>.bin`. If flashing a blank `W25Q64FV` (`SR2=0x00`), run `bash scripts/flash-ch341a.sh <file>.bin` (which flashes, verifies, and sets non-volatile `SR1=0x00, SR2=0x02` in one step).
           - **GbE MAC Notice:** Replace `0x001000..0x002fff` (`FREG3`) with your board's original GbE EEPROM if needed to keep your unique onboard `I218-V` MAC address.""")
           PY

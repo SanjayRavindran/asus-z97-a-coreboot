@@ -219,6 +219,18 @@ static const struct sm_object erp_ready = SM_DECLARE_ENUM({
 				SM_ENUM_VALUE_END },
 });
 
+static const struct sm_object wol_enable = SM_DECLARE_ENUM({
+	.opt_name	= "wol_enable",
+	.ui_name	= "Wake-on-LAN (S3/S4/S5)",
+	.ui_helptext	= "Set PCH GEN_PMCON_3 WOL_EN_OVRD and keep PME_B0/PCI_EXP/PME GPEs enabled\n"
+			  "in S5 for onboard I218-V and PCIe NIC wake. Requires ErP Ready = Disabled.",
+	.default_value	= 1,
+	.values		= (const struct sm_enum_value[]) {
+				{ "Disabled",	0 },
+				{ "Enabled",	1 },
+				SM_ENUM_VALUE_END },
+});
+
 static struct sm_obj_form system = {
 	.ui_name = "System & PCIe",
 	.obj_list = (const struct sm_object *[]) {
@@ -275,6 +287,7 @@ static struct sm_obj_form power = {
 	.ui_name = "Power Management",
 	.obj_list = (const struct sm_object *[]) {
 		&power_on_after_fail,
+		&wol_enable,
 		&erp_ready,
 		&epu_mode,
 		NULL

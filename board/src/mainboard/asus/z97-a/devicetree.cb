@@ -40,7 +40,7 @@ chip northbridge/intel/haswell
 			register "gen1_dec" = "0x003c0291"
 			register "gen2_dec" = "0x007c0a01"
 			register "gen4_dec" = "0x000cff29"
-			register "gpe0_en_1" = "0x40042246"
+			register "gpe0_en_1" = "0x40042a46"
 			register "sata_port_map" = "0x3f"
 			register "xhci_default" = "1"
 

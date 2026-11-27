@@ -30,8 +30,9 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
 - **Display, Networking, Virtualization & Sensors**:
   - Native **`libgfxinit`** HD 4600 (`00:02.0`, `CDCLK=539 MHz`, stock `data.vbt`) + **EDK2 UEFI GOP** + on-screen verbose [`fb_console.c`](board/src/mainboard/asus/z97-a/fb_console.c), verified on a `1920x1080` HDMI monitor (`AOC 28E850`).
   - Integrated **`iPXE Network Boot`** (`HTTPS` + `IMAGE_TRUST_CMD`) inside EDK2 supporting both onboard **`I218-V`** (`eno0`) and add-in **`I226-V` `2.5GbE`** (`enp5s0`, zero NIC error/CRC counters).
-  - **True 64-bit Above-4G MMIO (`PM64` `QWordMemory`)**, **Resizable BAR up to 32 GiB**, **SR-IOV**, and **VT-d (`DMAR`, 15 IOMMU groups, `/dev/kvm`)**.
-  - **Proxmox VE 9 (`Linux 7.0.14-17-pve`) Sensors & Hardware Controls**: `nct6775` (`NCT6791D @ 0x0290` unlocked via `CR 0x28=0x00`), `coretemp`, `intel-rapl`, `Q-LEDs` (`DRAM -> VGA -> BOOT_DEVICE`), SmartFan IV Q-Fan curves, `ErP S4/S5`, read-only `ENE EC MBE0-Z97-0121`, opt-in `DIGI+ ASP1252` CFR menu, `TPU` (`MSR 0x1ad`), and `EPU` (`-20 mV` OC Mailbox).
+  - **True 64-bit Above-4G MMIO (`PM64` `QWordMemory`, `ALWAYS_ALLOW_ABOVE_4G_ALLOCATION=y`)**, **Resizable BAR up to 32 GiB** (Coreboot + EDK2 `PcdPcieResizableBarSupport=TRUE`), **SR-IOV + ARI**, **VT-x (`VMX`/`EPT`/`VPID`)**, and **VT-d (`DMAR`, IOMMU + IRQ remapping, `/dev/kvm`)** — all enabled by default.
+  - **Minimal / Disabled Intel ME (`without-me`: `116 KiB` `ROMP+BUP` + `AltMeDisable=1` + `BIOS@0x020000`; `MEI #1` `00:16.0` hidden by default via `FD2`)**, **Restore AC Power Loss = Power ON (`S0`)**, and **Wake-on-LAN (`S3/S4/S5`)** enabled by default (`GEN_PMCON_3 WOL_EN_OVRD=1`, ACPI `_PRW` on `GLAN` + `PEG0..2` + `RP01..08`, S5 GPE preservation).
+  - **Proxmox VE 9 (`Linux 7.0.14-17-pve`) Sensors & Hardware Controls**: `nct6775` (`NCT6791D @ 0x0290` unlocked via `CR 0x28=0x00`), `coretemp`, `intel-rapl`, `Q-LEDs` (`DRAM -> VGA -> BOOT_DEVICE`), SmartFan IV Q-Fan curves, `ErP S4/S5`, read-only `ENE EC MBE0-Z97-0121`, opt-in `DIGI+ ASP1252` CFR menu, `TPU` (`MSR 0x1ad`), `EPU` (`-20 mV` OC Mailbox), UEFI CFR Setup (`ESC`), and UEFI Shell.
   - **Haswell `microcode 0x28`** (latest Intel `3rdparty/intel-microcode`, newer than stock `0x24`) and **unlocked SPI (`FLMSTR1=0xffff0000`, `BIOS_CNTL=0x09`)** allowing future `COREBOOT`-only internal `flashrom` or pre-OS UEFI delta updates without removing the socketed SPI chip.
 
 ---
@@ -40,12 +41,12 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
 
 | Component / Blob | Version / Revision | Status |
 |---|---|---|
-| **Coreboot / CI Cadence** | Live `v0.15` (`df45ea2c49b4`) / CI `26.09` (`YY.03/06/09/12`) | **Latest** |
+| **Coreboot / CI Cadence** | Live `v0.16` (`df45ea2c49b4`) / CI `26.09` (`YY.03/06/09/12`) | **Latest** |
 | **EDK2 `UefiPayloadPkg`** | MrChromebox `f248a68be3` (`2026-11-14`) | **Latest** |
 | **iPXE** | `21f9cda4d` (`master`, pulled fresh in every CI run) | **Latest** |
 | **CPU Microcode (`0x306c3` / `0x40661` / `0x40671`)** | `rev 0x28` / `0x1c` / `0x22` (`intel-microcode` `bdc92ab`) | **Latest / Final** |
-| **Intel ME (`FREG2`, `with-me` / `without-me`)** | `9.1.25.1005` (`FTPR` RSA VALID; `without-me` neutralized) | Final ASUS `3503` *(Intel final 9.1.x is `9.1.45.3000`)* |
-| **IFD / GbE `I218-V` / VBT / ENE EC** | `3503` (`FLMSTR1=0xffff0000`, `I218-V 0.1-4`, `VBT 100`, `MBE0-Z97-0121`) | **Final** ASUS Z97-A `3503` |
+| **Intel ME (`FREG2`, `with-me` / `without-me`)** | `with-me`: `9.1.25.1005` (`MEI #1` hidden via `FD2`)<br>`without-me`: `116 KiB` minimal (`ROMP+BUP`, `AltMeDisable=1`, `BIOS@0x020000`) | Minimum safe ME (Z97 requires `ROMP+BUP` to prevent 30-min power-off) |
+| **IFD / GbE `I218-V` / VBT / ENE EC** | `3503` (`FLMSTR1=0xffff0000`, `I218-V 0.1-4`, `VBT 100`, `MBE0-Z97-0121`) | **Final** ASUS Z97-A `3503` (`data.vbt` SHA-256 `ada53b3d...` = stock `i915_vbt.bin`) |
 
 *(See [`BLOBS.md`](BLOBS.md) for full SHA-256 checksums, `libgfxinit`/`libhwbase`/`vboot` commits, and NIC/SSD firmware details.)*
 
@@ -53,14 +54,15 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
 
 ## Verified Hardware Telemetry (`192.168.1.150` Live Proxmox VE 9)
 
-| Subsystem | Live Verification (`-z97a-v0.15`, kernel `7.0.14-17-pve`) |
+| Subsystem | Live Verification (`-z97a-v0.16-with-me`, kernel `7.0.14-17-pve`) |
 |---|---|
-| **CPU / Microcode / Memory** | `Intel i7-4790K @ 4.00GHz` (`4.2–4.4 GHz` Turbo `0x2a2b2c2c`), microcode `0x28`, `32 GiB` DDR3-1866 (`4x 8 GiB` dual-channel) |
+| **CPU / Microcode / Memory** | `Intel i7-4790K @ 4.00GHz` (`4.2–4.4 GHz` Turbo `0x2a2b2c2c`), microcode `0x28`, `32 GiB` DDR3-1866 (`4x 8 GiB` dual-channel), `MSR 0x3a = 0x5` (`VMX` locked ON) |
 | **SATA Storage (`ata5`, `SATA6G_5`)** | `CT500BX500SSD1`: **`6.0 Gbps` (`SStatus 133`)**, `dd`: **`451 MB/s`**, **0 resets**, SMART `Reallocated = 0`, `UDMA_CRC` no new errors |
-| **PCIe & Networking** | `00:1c.2 -> 05:00.0` (`I226-V`, `enp5s0`): **`2500Mb/s` Full**, `LnkSta 5GT/s x1`, `ASPM Disabled`, `CommClk+`, **0 AER / NIC errors**; `00:19.0` (`I218-V`): MAC preserved; `00:1c.0 -> 02:00.0` (`ASM1083` PCI bridge): `2.5GT/s x1` |
+| **PCIe, Above-4G & Networking** | `[mem 0x87ae00000-0x7fffffffff]` 64-bit Above-4G window; `00:1c.2 -> 05:00.0` (`I226-V`, `enp5s0`): **`2500Mb/s` Full**, `LnkSta 5GT/s x1`, `ASPM Disabled`, `CommClk+`, `Wake-on: g`; `00:19.0` (`I218-V`): MAC `9c:5c:8e:90:7e:f2`, `Wake-on: g`; `00:16.0` (`MEI #1`): **hidden** |
+| **Power & Wake-on-LAN (`ACPI`)** | `GEN_PMCON_3 = 0x3808` (`AFTERG3_EN=0` **Power ON after AC loss**, `WOL_EN_OVRD=1`); `/proc/acpi/wakeup`: `GLAN` (`S4 *enabled`), `PEGP` (`S4 *enabled`), `RP01..RP08` (`RP03 *enabled`), `XHCI` (`S3 *enabled`) |
 | **Display & Audio** | `card1-HDMI-A-3` connected (`AOC 28E850`, `1920x1080`, `dpms=On`); `Realtek ALC892` (`1043:860b`, `NID 0x11=0x90460130`) + Haswell HDMI audio |
-| **Sensors, RAPL & EC** | `nct6791-isa-0290` (`Vcore=888–896 mV`, `+3.3V=3.38V`, `3VSB=3.41V`, `Vbat=3.28V`, `fan2=860–870 RPM`, `SYSTIN=+31°C`); `coretemp` `Pkg +41–42°C`; `intel-rapl` `PL1=88W`/`PL2=110W`; `ENE EC: MBE0-Z97-0121` |
-| **Serial, USB, IOMMU & SPI** | `ttyS0` `0x03f8` IRQ `4` (`115200 8N1`); `14` USB2 + `6` USB3 (`xhci_hcd`); `15` IOMMU groups + `/dev/kvm`; `dmesg -l err,crit,alert,emerg`: **0 errors** |
+| **Sensors, RAPL & EC** | `nct6791-isa-0290` (`Vcore=888 mV`, `+3.3V=3.38V`, `3VSB=3.42V`, `Vbat=3.28V`, `fan2=873 RPM`, `SYSTIN=+32°C`); `coretemp` `Pkg +44°C`; `intel-rapl` `PL1=88W`/`PL2=110W`; `ENE EC: MBE0-Z97-0121` |
+| **Serial, USB, IOMMU & SPI** | `ttyS0` `0x03f8` IRQ `4` (`115200 8N1`); `14` USB2 + `6` USB3 (`xhci_hcd`); `14` IOMMU groups (`DMAR` + `/dev/kvm`); `dmesg -l err,crit,alert,emerg`: **0 errors** |
 
 ---
 
@@ -91,8 +93,8 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg` + iPXE** motherboard port (tracki
    - When flashing a blank or external Winbond `W25Q64FV` DIP-8 chip, **always replace `blobs/gbe-z97-a.bin` (`0x001000..0x002fff`) with your own board's `FREG3` GbE region** so you keep your motherboard's unique LAN MAC address.
    - ASUS Z97-A requires **non-volatile Quad Enable (`SR1=0x00`, `SR2=0x02`, `QE=1`)** on `W25Q64FV` or the board will not POST even if flash verification passes. Because `QE=1` lives in a silicon status register outside the `.bin` image, flash blank chips with [`scripts/flash-ch341a.sh`](scripts/flash-ch341a.sh) (`flashrom -p ch341a_spi -w <file>.bin -v <file>.bin` + `python3 scripts/ch341a-w25q64-qe.py --set-qe`) in one step.
 3. **Updating Once Coreboot is Running (Internal `flashrom` or UEFI `z97a_tool.efi`):**
-   - Coreboot's FMAP places `RW_MRC_CACHE` at `0x180000..0x18ffff`, `SMMSTORE` at `0x190000..0x20ffff`, `FMAP` at `0x210000..0x210fff`, and `COREBOOT` at `0x211000..0x7fffff`.
-   - Write **only** `0x00211000:0x007fffff coreboot` (`flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" -l layout.txt -i coreboot -w <full.rom> --noverify-all`) or use [`tools/z97a_uefi_tool/z97a_tool.c`](tools/z97a_uefi_tool/z97a_tool.c) so `IFD`, `GbE`, `ME`, `QE=1`, `RW_MRC_CACHE`, and `SMMSTORE` remain intact.
+   - For **`with-me`** (`BIOS@0x180000`), Coreboot's FMAP places `RW_MRC_CACHE` at `0x180000..0x18ffff`, `SMMSTORE` at `0x190000..0x20ffff`, `FMAP` at `0x210000..0x210fff`, and `COREBOOT` at `0x211000..0x7fffff`. Write **only** `0x00211000:0x007fffff coreboot` (`flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" -l layout.txt -i coreboot -w <full.rom> --noverify-all`) or use [`tools/z97a_uefi_tool/z97a_tool.c`](tools/z97a_uefi_tool/z97a_tool.c) so `IFD`, `GbE`, `ME`, `QE=1`, `RW_MRC_CACHE`, and `SMMSTORE` remain intact. Note: preserving `SMMSTORE` keeps previously saved UEFI CFR choices (`me_disable`, `power_on_after_fail`, `wol_enable`); update them in `ESC -> Device Manager -> coreboot Configuration` or also write `-i SMMSTORE` (`0x190000..0x20ffff`) to reset CFR & NVRAM to factory defaults.
+   - To switch from stock ME (`with-me`, `BIOS@0x180000`) to `minimal-116k` (`without-me`, `BIOS@0x020000`), flash the complete 8 MiB `.bin` externally via `CH341A` (`bash scripts/flash-ch341a.sh <without-me.bin>`); **never** flash `IFD` or `ME` internally while ME is running.
 
 ---
 

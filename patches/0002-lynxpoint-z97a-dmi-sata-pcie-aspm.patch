@@ -23,6 +23,19 @@ index a844d7cd..6d750756 100644
  	default y
  
  config SERIALIO_UART_CONSOLE
+diff --git a/src/southbridge/intel/lynxpoint/cfr.h b/src/southbridge/intel/lynxpoint/cfr.h
+index 83950ea8..e574a268 100644
+--- a/src/southbridge/intel/lynxpoint/cfr.h
++++ b/src/southbridge/intel/lynxpoint/cfr.h
+@@ -28,7 +28,7 @@ static const struct sm_object me_disable = SM_DECLARE_ENUM({
+ 	.opt_name	= "me_disable",
+ 	.ui_name	= "Intel Management Engine",
+ 	.ui_helptext	= "Enable or disable the PCI/HECI interface of the Intel Management Engine",
+-	.default_value	= 0,
++	.default_value	= CONFIG(DISABLE_ME_PCI),
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Disabled",	1	},
+ 				{ "Enabled",	0	},
 diff --git a/src/southbridge/intel/lynxpoint/early_pch_native.c b/src/southbridge/intel/lynxpoint/early_pch_native.c
 index 04b5055c..110930be 100644
 --- a/src/southbridge/intel/lynxpoint/early_pch_native.c
@@ -153,7 +166,7 @@ index cb6f6ee8..d2fddfcc 100644
  		const uint8_t param_2 = get_ehci_tune_param_2(&mainboard_usb2_ports[port]);
  		pch_iobp_update(addr, ~0x7f00, param_2 << 11 | param_1 << 8);
 diff --git a/src/southbridge/intel/lynxpoint/lpc.c b/src/southbridge/intel/lynxpoint/lpc.c
-index 4239da0e..97592cfa 100644
+index 4239da0e..8811a2e4 100644
 --- a/src/southbridge/intel/lynxpoint/lpc.c
 +++ b/src/southbridge/intel/lynxpoint/lpc.c
 @@ -113,6 +113,18 @@ static void pch_pirq_init(struct device *dev)
@@ -175,7 +188,25 @@ index 4239da0e..97592cfa 100644
  	/* Eric Biederman once said we should let the OS do this.
  	 * I am not so sure anymore he was right.
  	 */
-@@ -308,7 +320,8 @@ static void configure_dmi_pm(struct device *dev)
+@@ -213,6 +225,17 @@ static void pch_power_options(struct device *dev)
+ 
+ 	reg16 |= (1 << 12);	/* Disable SLP stretch after SUS well */
+ 
++	if (CONFIG(BOARD_ASUS_Z97_A)) {
++		const bool wol_en = get_uint_option("wol_enable", 1) &&
++				    !get_uint_option("erp_ready", 0);
++		if (wol_en)
++			reg16 |= (1 << 13);	/* WOL_EN_OVRD */
++		else
++			reg16 &= ~(1 << 13);
++		printk(BIOS_INFO, "Z97-A: Wake-on-LAN %s (GEN_PMCON_3=0x%04x)\n",
++		       wol_en ? "enabled" : "disabled", reg16);
++	}
++
+ 	pci_write_config16(dev, GEN_PMCON_3, reg16);
+ 	printk(BIOS_INFO, "Set power %s after power failure.\n", state);
+ 
+@@ -308,7 +331,8 @@ static void configure_dmi_pm(struct device *dev)
  
  	RCBA32_OR(0x21a4, 3 << 10);
  
@@ -185,7 +216,7 @@ index 4239da0e..97592cfa 100644
  
  	/* Set again after enabling DMI ASPM */
  	RCBA32_OR(0x2304, 1 << 10);
-@@ -378,7 +391,7 @@ static void lpt_pm_init(struct device *dev)
+@@ -378,7 +402,7 @@ static void lpt_pm_init(struct device *dev)
  	/* DMI power optimizer */
  	RCBA32_OR(0x33d4, 1 << 27);
  	RCBA32_OR(0x33c8, 1 << 27);
@@ -194,7 +225,7 @@ index 4239da0e..97592cfa 100644
  	RCBA32(0x2b24) = 0x4000000b;
  	RCBA32(0x2b28) = 0x00000002;
  	RCBA32(0x2b2c) = 0x00008813;
-@@ -393,7 +406,7 @@ static void lpt_pm_init(struct device *dev)
+@@ -393,7 +417,7 @@ static void lpt_pm_init(struct device *dev)
  		reg32 |= (1 << 24) | (1 << 26);
  	RCBA32(0x3a84) = reg32;
  	RCBA32(0x3a88) = 0x00000001;
@@ -203,7 +234,7 @@ index 4239da0e..97592cfa 100644
  
  	configure_dmi_pm(dev);
  }
-@@ -597,7 +610,8 @@ static void lpc_init(struct device *dev)
+@@ -597,7 +621,8 @@ static void lpc_init(struct device *dev)
  		enable_lp_clock_gating(dev);
  	} else {
  		lpt_pm_init(dev);
@@ -213,6 +244,42 @@ index 4239da0e..97592cfa 100644
  	}
  
  	/* Initialize the real time clock. */
+diff --git a/src/southbridge/intel/lynxpoint/me.c b/src/southbridge/intel/lynxpoint/me.c
+index d59040c9..428da398 100644
+--- a/src/southbridge/intel/lynxpoint/me.c
++++ b/src/southbridge/intel/lynxpoint/me.c
+@@ -592,20 +592,21 @@ static void intel_me_finalize(struct device *dev)
+ 
+ 	/* TODO: Unify ME finalisation between LPT and WPT */
+ #if !CONFIG(SOUTHBRIDGE_INTEL_WILDCATPOINT)
+-	/* Wait for ME MBP Cleared indicator */
+-	intel_me_mbp_clear(dev);
+-
+ 	/* Make sure ME is in a mode that expects EOP */
+ 	hfs.raw = pci_read_config32(dev, PCI_ME_HFS);
+ 
+-	/* Abort and leave device alone if not normal mode */
+-	if (hfs.fpt_bad ||
+-	    hfs.working_state != ME_HFS_CWS_NORMAL ||
+-	    hfs.operation_mode != ME_HFS_MODE_NORMAL)
+-		return;
++	if (!hfs.fpt_bad &&
++	    hfs.working_state == ME_HFS_CWS_NORMAL &&
++	    hfs.operation_mode == ME_HFS_MODE_NORMAL) {
++		/* Wait for ME MBP Cleared indicator */
++		intel_me_mbp_clear(dev);
+ 
+-	/* Try to send EOP command so ME stops accepting other commands */
+-	mkhi_end_of_post();
++		/* Try to send EOP command so ME stops accepting other commands */
++		mkhi_end_of_post();
++	} else if (!CONFIG(BOARD_ASUS_Z97_A)) {
++		/* Abort and leave device alone if not normal mode */
++		return;
++	}
+ #endif
+ 
+ 	if (!get_uint_option("me_disable", CONFIG(DISABLE_ME_PCI)))
 diff --git a/src/southbridge/intel/lynxpoint/pcie.c b/src/southbridge/intel/lynxpoint/pcie.c
 index d985ac92..159cea62 100644
 --- a/src/southbridge/intel/lynxpoint/pcie.c
@@ -355,7 +422,7 @@ index 43b08ea4..c5979dab 100644
  
  static struct device_operations sata_ops = {
 diff --git a/src/southbridge/intel/lynxpoint/smihandler.c b/src/southbridge/intel/lynxpoint/smihandler.c
-index 966b3d89..23124053 100644
+index 966b3d89..98e67c5a 100644
 --- a/src/southbridge/intel/lynxpoint/smihandler.c
 +++ b/src/southbridge/intel/lynxpoint/smihandler.c
 @@ -59,9 +59,17 @@ static void busmaster_disable_on_bus(int bus)
@@ -379,3 +446,23 @@ index 966b3d89..23124053 100644
  			}
  		}
  	}
+@@ -185,8 +193,17 @@ static void southbridge_smi_sleep(void)
+ 			backlight_off();
+ 		}
+ 
+-		/* Disable all GPE */
+-		disable_all_gpe();
++		if (CONFIG(BOARD_ASUS_Z97_A) &&
++		    (pci_read_config16(PCH_LPC_DEV, GEN_PMCON_3) & (1 << 13))) {
++			const u32 wol_gpe = PME_B0_EN | PME_EN | (1 << 9);
++			outl(PME_B0_STS | PME_STS | PCI_EXP_STS, pmbase + GPE0_STS);
++			enable_all_gpe(wol_gpe, 0, 0, 0);
++			outw(PCIEXPWAK_STS, pmbase + PM1_STS);
++			outw(inw(pmbase + PM1_EN) & ~PCIEXPWAK_DIS, pmbase + PM1_EN);
++		} else {
++			/* Disable all GPE */
++			disable_all_gpe();
++		}
+ 
+ 		/* Always set the flag in case CMOS was changed on runtime. */
+ 		if (power_on_after_fail())

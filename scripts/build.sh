@@ -84,7 +84,7 @@ if [ -n "$EDK2_CACHE_FD" ] && [ -f "$EDK2_CACHE_FD" ] && [ "${FORCE_REBUILD_EDK2
 fi
 
 echo "[4/6] Building Coreboot + EDK2 + iPXE ($VARIANT_NAME)"
-rm -f build/coreboot.rom build/coreboot.pre build/fmap.fmd build/fmap.fmap
+rm -f build/coreboot.rom build/coreboot.pre build/fmap.fmd build/fmap.fmap build/fmap_config.h build/me.bin build/ifd_custom_tsbs
 make -j"$(nproc)" UPDATED_SUBMODULES=1
 
 if [ -n "$EDK2_CACHE_FD" ] && [ -f build/UEFIPAYLOAD.fd ] && { [ ! -f "$EDK2_CACHE_FD" ] || [ "${FORCE_REBUILD_EDK2:-0}" = "1" ]; }; then
@@ -115,8 +115,12 @@ echo "$IFD_OUT" | grep -q "JID1:  0x001740ef"
 echo "$IFD_OUT" | grep -q "PCHSTRP9  : 0xf0544a85"
 echo "$IFD_OUT" | grep -q "PCHSTRP18 : 0x00000003"
 if [ "$VARIANT_NAME" = "without-me" ]; then
+  echo "$IFD_OUT" | grep -q "FLREG1:    0x07ff0020"
+  echo "$IFD_OUT" | grep -q "FLREG2:    0x001f0003"
   echo "$IFD_OUT" | grep -q "AltMeDisable bit is set"
 else
+  echo "$IFD_OUT" | grep -q "FLREG1:    0x07ff0180"
+  echo "$IFD_OUT" | grep -q "FLREG2:    0x017f0003"
   echo "$IFD_OUT" | grep -q "AltMeDisable bit is not set"
 fi
 
@@ -130,10 +134,11 @@ assert len(rom) == 8388608, f"Expected 8388608 B ROM, got {len(rom)}"
 mac = rom[0x1000:0x1006].hex(":")
 print(f"FREG3 GbE MAC: {mac}")
 
-me = rom[0x3000:0x180000]
+me_end = 0x20000 if variant == "without-me" else 0x180000
+me = rom[0x3000:me_end]
 assert me[0x10:0x14] == b"$FPT", f"Missing ME $FPT signature at 0x3010 (got {me[0x10:0x14]!r})"
 assert b"FTPR" in me[:0x1000], "Missing FTPR partition entry in ME $FPT table"
-print(f"ME $FPT & FTPR verified for variant '{variant}'.")
+print(f"ME $FPT & FTPR ({len(me)} B) verified for variant '{variant}'.")
 PY
 
 CBFS_LIST="$(./build/cbfstool "$OUT_BIN" print)"
@@ -145,8 +150,19 @@ done
 grep -q "^# CONFIG_PCIEXP_ASPM is not set$" .config
 grep -q "^# CONFIG_PCIEXP_CLK_PM is not set$" .config
 grep -q "^# CONFIG_PCIEXP_L1_SUB_STATE is not set$" .config
-grep -q "^CONFIG_EDK2_ENABLE_IPXE=y$" .config
-echo "Verified .config: ASPM=n, CLK_PM=n, L1_SUB_STATE=n, EDK2_ENABLE_IPXE=y."
+for sym in \
+  CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION \
+  CONFIG_PCIEXP_SUPPORT_RESIZABLE_BARS \
+  CONFIG_PCIEXP_HOTPLUG \
+  CONFIG_PCIEXP_HOTPLUG_PREFETCH_MEM_ABOVE_4G \
+  CONFIG_ENABLE_VMX \
+  CONFIG_POWER_STATE_ON_AFTER_FAILURE \
+  CONFIG_DISABLE_ME_PCI \
+  CONFIG_EDK2_HAVE_EFI_SHELL \
+  CONFIG_EDK2_ENABLE_IPXE; do
+  grep -q "^${sym}=y$" .config || { echo "ERROR: Missing ${sym}=y in .config" >&2; exit 1; }
+done
+echo "Verified .config: ASPM=n, Above4G=y, ReBar=y, Hotplug/SR-IOV=y, VMX=y, PowerOnAfterFail=y, DisableME_PCI=y, EFI_Shell=y, iPXE=y."
 
 popd >/dev/null
 echo "Verified ready-to-flash 8 MiB ROM: $OUT_BIN"
