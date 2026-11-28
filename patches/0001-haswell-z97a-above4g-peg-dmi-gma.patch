@@ -94,6 +94,26 @@ index 9941242f..e980b2b2 100644
  	do {} while (dmibar_read16(DMIVCPRSTS) & VCNEGPND);
  	do {} while (dmibar_read16(DMIVCMRSTS) & VCNEGPND);
  	printk(BIOS_DEBUG, "done!\n");
+diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
+index c4412fd5..8c4f1d2e 100644
+--- a/src/northbridge/intel/haswell/early_init.c
++++ b/src/northbridge/intel/haswell/early_init.c
+@@ -103,11 +103,13 @@ static void northbridge_setup_iommu(void)
+ 		const u32 gfxvt_archdis = 0x02100000 | DMAR_LCKDN;
+ 		write32p(GFXVT_BASE_ADDRESS + ARCHDIS, gfxvt_archdis);
+ 
+-		clrsetbits32p(VTVC0_BASE_ADDRESS + 0xf04, 0xf << 15, 1 << 15);
++		if (!CONFIG(BOARD_ASUS_Z97_A))
++			clrsetbits32p(VTVC0_BASE_ADDRESS + 0xf04, 0xf << 15, 1 << 15);
+ 
+ 		u32 vtvc0_archdis = 0x000a5003 | DMAR_LCKDN;
+-		if (pci_read_config16(PCI_DEV(0, 2, 0), PCI_DEVICE_ID) == 0xffff) {
++		if (CONFIG(BOARD_ASUS_Z97_A) ||
++		    pci_read_config16(PCI_DEV(0, 2, 0), PCI_DEVICE_ID) == 0xffff) {
+ 			vtvc0_archdis |= SPCAPCTRL;
+ 		}
+ 		write32p(VTVC0_BASE_ADDRESS + ARCHDIS, vtvc0_archdis);
+ 	}
 diff --git a/src/northbridge/intel/haswell/early_pcie.c b/src/northbridge/intel/haswell/early_pcie.c
 index 01ccbeb1..71b7e1bf 100644
 --- a/src/northbridge/intel/haswell/early_pcie.c

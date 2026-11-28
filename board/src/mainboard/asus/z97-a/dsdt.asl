@@ -24,5 +24,6 @@ DefinitionBlock(
 		#include <northbridge/intel/haswell/acpi/hostbridge.asl>
 		#include <southbridge/intel/lynxpoint/acpi/pch.asl>
 		#include "acpi/wol.asl"
+		#include "acpi/peg_prt.asl"
 	}
 }
